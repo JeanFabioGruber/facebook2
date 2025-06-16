@@ -1,0 +1,35 @@
+# Controle de Gastos
+
+Aplicativo mobile para controle de gastos pessoais, feito em React Native (Expo) com Firebase.
+
+## Funcionalidades
+
+- Cadastro de usuário (nome, telefone, e-mail, senha)
+- Login (e-mail e senha)
+- Recuperação de senha por e-mail
+- Cadastro de gastos (valor, descrição, data)
+- Edição e exclusão de gastos
+- Listagem de gastos agrupados por data, com totalizador
+- Visualização dos dados da conta (nome, e-mail, telefone)
+- Logout
+
+## Tecnologias
+
+- React Native (Expo)
+- Firebase Authentication
+- Firestore Database
+
+## Como rodar
+
+1. Renomeie `.env.example` para `.env` e preencha com suas credenciais do Firebase.
+2. Instale as dependências:
+   ```sh
+   npm install
+   ```
+3. Inicie o projeto:
+   ```sh
+   npx expo start
+   ```
+4. Use o Expo Go ou emulador para testar.
+
+---
