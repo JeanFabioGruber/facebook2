@@ -13,6 +13,7 @@ export default function AppNavigator () {
             <Stack.Screen name="MinhaConta" component={MinhaContaScreen} options={{ headerShown: false }} />
             <Stack.Screen name="Gastos" component={GastosScreen} options={{ headerShown: false }} />
             <Stack.Screen name="Profile" component={ProfileScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="ProfileScreen" component={ProfileScreen} />
         </Stack.Navigator>
     )
 }

@@ -1,241 +1,232 @@
-import { useState, useEffect } from "react";
-import { SafeAreaView, Text, StyleSheet, View, FlatList, Alert, TouchableOpacity, Image } from "react-native";
-import { db } from '../firebase';
-import { SecondaryButton } from "../components/Buttons";
-import { collection, getDocs, query, orderBy, doc, updateDoc, increment, getDoc } from "firebase/firestore";
-import { onAuthStateChanged } from "firebase/auth";
-import { auth } from "../firebase";
-import { useNavigation } from '@react-navigation/native';
+import React, { useState, useEffect } from 'react';
+import {
+    View,
+    Text,
+    StyleSheet,
+    FlatList,
+    Image,
+    TouchableOpacity,
+    SafeAreaView,
+    ActivityIndicator,
+    Alert,
+    RefreshControl,
+    Dimensions
+} from 'react-native';
+import { db, auth } from '../firebase';
+import { collection, query, orderBy, getDocs, doc, getDoc } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
-import { Dimensions } from "react-native";
-import { SafeAreaView as RNSafeAreaView } from 'react-native-safe-area-context';
-import { StatusBar } from 'react-native';
 
-export default function HomeScreen() {
+export default function HomeScreen({ navigation }) {
     const [posts, setPosts] = useState([]);
-    const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
-    const [likeLoading, setLikeLoading] = useState({});
-    const navigation = useNavigation();
+    const [refreshing, setRefreshing] = useState(false);
 
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-            setUser(currentUser);
-            if (currentUser) {
-                loadPosts();
-            }
-        });
-
-        return unsubscribe;
+        loadPosts();
     }, []);
 
-    const loadPosts = async () => {
+    const formatDate = (timestamp) => {
+        if (!timestamp) return '';
         try {
-            setLoading(true);
+            const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+            const now = new Date();
+            const diffTime = Math.abs(now - date);
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            
+            if (diffDays === 1) return 'Ontem';
+            if (diffDays < 7) return `${diffDays} dias atrás`;
+            return date.toLocaleDateString('pt-BR');
+        } catch (error) {
+            return '';
+        }
+    };
+
+    const loadPosts = async () => {
+        setLoading(true);
+        try {
             const postsQuery = query(
                 collection(db, 'posts'),
                 orderBy('createdAt', 'desc')
             );
             
             const snapshot = await getDocs(postsQuery);
-            const postsData = [];
-            
-            for (const docSnap of snapshot.docs) {
-                const postData = { id: docSnap.id, ...docSnap.data() };
-                
-                // Buscar dados do usuário que publicou
-                if (postData.userId) {
-                    const userDoc = await getDoc(doc(db, 'users', postData.userId));
-                    if (userDoc.exists()) {
-                        postData.author = userDoc.data();
+            let postsData = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            // Buscar dados do usuário para cada post
+            const postsWithUserData = await Promise.all(
+                postsData.map(async (post) => {
+                    try {
+                        const userDoc = await getDoc(doc(db, 'users', post.userId));
+                        if (userDoc.exists()) {
+                            const userData = userDoc.data();
+                            return {
+                                ...post,
+                                userName: userData.nome || 'Usuário',
+                                userProfileImage: userData.profileImage || null
+                            };
+                        }
+                        return {
+                            ...post,
+                            userName: 'Usuário',
+                            userProfileImage: null
+                        };
+                    } catch (error) {
+                        console.error('Erro ao buscar dados do usuário:', error);
+                        return {
+                            ...post,
+                            userName: 'Usuário',
+                            userProfileImage: null
+                        };
                     }
-                }
-                
-                postsData.push(postData);
-            }
-            
-            setPosts(postsData);
+                })
+            );
+
+            setPosts(postsWithUserData);
         } catch (error) {
             console.error('Erro ao carregar posts:', error);
-            Alert.alert('Erro', 'Não foi possível carregar as publicações');
+            Alert.alert('Erro', 'Não foi possível carregar os posts');
         } finally {
             setLoading(false);
         }
     };
 
-    const handleLike = async (postId) => {
-        if (!user || likeLoading[postId]) return;
-
-        setLikeLoading(prev => ({ ...prev, [postId]: true }));
-
-        try {
-            const postRef = doc(db, 'posts', postId);
-            const postDoc = await getDoc(postRef);
-
-            if (postDoc.exists()) {
-                const postData = postDoc.data();
-                const likedBy = postData.likedBy || [];
-                let updatedLikedBy, likeChange;
-
-                if (likedBy.includes(user.uid)) {
-                    // Remover curtida
-                    updatedLikedBy = likedBy.filter(uid => uid !== user.uid);
-                    likeChange = -1;
-                } else {
-                    // Adicionar curtida
-                    updatedLikedBy = [...likedBy, user.uid];
-                    likeChange = 1;
-                }
-
-                await updateDoc(postRef, {
-                    likes: increment(likeChange),
-                    likedBy: updatedLikedBy
-                });
-
-                // Atualiza o post localmente sem recarregar tudo
-                setPosts(prevPosts =>
-                    prevPosts.map(post =>
-                        post.id === postId
-                            ? {
-                                ...post,
-                                likes: (post.likes || 0) + likeChange,
-                                likedBy: updatedLikedBy
-                            }
-                            : post
-                    )
-                );
-            }
-        } catch (error) {
-            console.error('Erro ao curtir post:', error);
-            Alert.alert('Erro', 'Não foi possível curtir a publicação');
-        } finally {
-            setLikeLoading(prev => ({ ...prev, [postId]: false }));
-        }
+    const onRefresh = async () => {
+        setRefreshing(true);
+        await loadPosts();
+        setRefreshing(false);
     };
 
-    const openProfile = (userId) => {
-        navigation.navigate('Profile', { userId });
-    };
-
-    const formatDate = (timestamp) => {
-        if (!timestamp) return '';
-        const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-        return date.toLocaleDateString('pt-BR') + ' às ' + date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    };
-
-    const renderPost = ({ item }) => {
-        const isLiked = item.likedBy?.includes(user?.uid) || false;
-        const isLoading = likeLoading[item.id];
-
-        return (
-            <View style={styles.postContainer}>
+    const renderPost = ({ item }) => (
+        <View style={styles.postContainer}>
+            {/* Header do post com foto e nome do usuário */}
+            <View style={styles.postHeader}>
                 <TouchableOpacity 
-                    style={styles.profileHeader}
-                    onPress={() => openProfile(item.userId)}
+                    style={styles.userInfo}
+                    onPress={() => navigation.navigate('ProfileScreen', { userId: item.userId })}
                 >
-                    <View style={styles.profileInfo}>
-                        <View style={styles.avatar}>
-                            <Text style={styles.avatarText}>
-                                {item.author?.nome?.charAt(0)?.toUpperCase() || 'U'}
+                    {item.userProfileImage ? (
+                        <Image 
+                            source={{ uri: item.userProfileImage }} 
+                            style={styles.userAvatar} 
+                        />
+                    ) : (
+                        <View style={styles.placeholderAvatar}>
+                            <Text style={styles.placeholderAvatarText}>
+                                {item.userName?.charAt(0)?.toUpperCase() || 'U'}
                             </Text>
-                        </View>
-                        <View>
-                            <Text style={styles.authorName}>
-                                {item.author?.nome || 'Usuário'}
-                            </Text>
-                            <Text style={styles.postDate}>
-                                {formatDate(item.createdAt)}
-                            </Text>
-                        </View>
-                    </View>
-                </TouchableOpacity>
-
-                {item.imageUrl && (
-                    <Image
-                        source={{ uri: item.imageUrl }}
-                        style={styles.postImage}
-                        resizeMode="cover"
-                    />
-                )}
-
-                <View style={styles.postContent}>
-                    <Text style={styles.postDescription}>{item.description}</Text>
-                    {item.location && (
-                        <View style={styles.locationContainer}>
-                            <Ionicons name="location-outline" size={16} color="#636e72" />
-                            <Text style={styles.locationText}>{item.location}</Text>
                         </View>
                     )}
-                </View>
-
-                <View style={styles.postActions}>
-                    <TouchableOpacity
-                        style={styles.likeButton}
-                        onPress={() => handleLike(item.id)}
-                        disabled={isLoading}
-                    >
-                        <Ionicons
-                            name={isLiked ? "heart" : "heart-outline"}
-                            size={24}
-                            color={isLiked ? "#e74c3c" : "#636e72"}
-                        />
-                        {isLoading ? (
-                            <Text style={[styles.likeCount, styles.likedText]}>...</Text>
-                        ) : (
-                            <Text style={[styles.likeCount, isLiked && styles.likedText]}>
-                                {item.likes || 0}
-                            </Text>
-                        )}
-                    </TouchableOpacity>
-                </View>
+                    <View style={styles.userDetails}>
+                        <Text style={styles.userName}>{item.userName}</Text>
+                        <Text style={styles.postDate}>{formatDate(item.createdAt)}</Text>
+                    </View>
+                </TouchableOpacity>
             </View>
-        );
-    };
 
-    if (loading) {
+            {/* Imagem do post */}
+            {item.imageUrl && (
+                <Image
+                    source={{ uri: item.imageUrl }}
+                    style={styles.postImage}
+                    resizeMode="cover"
+                />
+            )}
+
+            {/* Conteúdo do post */}
+            <View style={styles.postContent}>
+                <Text style={styles.postDescription}>{item.description}</Text>
+                
+                {item.location && (
+                    <View style={styles.locationContainer}>
+                        <Ionicons name="location-outline" size={14} color="#636e72" />
+                        <Text style={styles.locationText}>{item.location}</Text>
+                    </View>
+                )}
+            </View>
+
+            {/* Footer do post */}
+            <View style={styles.postFooter}>
+                <TouchableOpacity style={styles.likeButton}>
+                    <Ionicons name="heart-outline" size={24} color="#636e72" />
+                    <Text style={styles.likeCount}>{item.likes || 0}</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity style={styles.commentButton}>
+                    <Ionicons name="chatbubble-outline" size={24} color="#636e72" />
+                    <Text style={styles.commentCount}>{item.comments || 0}</Text>
+                </TouchableOpacity>
+            </View>
+        </View>
+    );
+
+    const renderHeader = () => (
+        <View style={styles.header}>
+            <Text style={styles.headerTitle}>Facebook</Text>
+            <View style={styles.headerButtons}>
+                <TouchableOpacity 
+                    style={styles.headerButton}
+                    onPress={() => navigation.navigate('AddPostScreen')}
+                >
+                    <Ionicons name="add-circle-outline" size={28} color="#1abc9c" />
+                </TouchableOpacity>
+                <TouchableOpacity 
+                    style={styles.headerButton}
+                    onPress={() => navigation.navigate('MinhaContaScreen')}
+                >
+                    <Ionicons name="person-circle-outline" size={28} color="#1abc9c" />
+                </TouchableOpacity>
+            </View>
+        </View>
+    );
+
+    if (loading && posts.length === 0) {
         return (
             <SafeAreaView style={styles.container}>
+                {renderHeader()}
                 <View style={styles.loadingContainer}>
-                    <Text>Carregando publicações...</Text>
+                    <ActivityIndicator size="large" color="#1abc9c" />
+                    <Text style={styles.loadingText}>Carregando posts...</Text>
                 </View>
             </SafeAreaView>
         );
     }
 
     return (
-        <RNSafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-            <StatusBar backgroundColor="#f5f6fa" barStyle="dark-content" />
-            <View style={styles.header}>
-                <Text style={styles.title}>Feed</Text>
-                <TouchableOpacity 
-                    onPress={() => navigation.navigate('MinhaConta')}
-                    style={styles.profileButton}
-                >
-                    <Ionicons name="person-circle-outline" size={32} color="#1abc9c" />
-                </TouchableOpacity>
-            </View>
+        <SafeAreaView style={styles.container}>
+            {renderHeader()}
             <FlatList
                 data={posts}
                 renderItem={renderPost}
                 keyExtractor={item => item.id}
-                refreshing={loading}
-                onRefresh={loadPosts}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={onRefresh}
+                        colors={['#1abc9c']}
+                        tintColor="#1abc9c"
+                    />
+                }
                 ListEmptyComponent={
                     <View style={styles.emptyContainer}>
-                        <Text style={styles.emptyText}>Nenhuma publicação encontrada</Text>
+                        <Ionicons name="images-outline" size={48} color="#b2bec3" />
+                        <Text style={styles.emptyText}>Nenhum post encontrado</Text>
+                        <Text style={styles.emptySubText}>Seja o primeiro a compartilhar algo!</Text>
                     </View>
                 }
                 showsVerticalScrollIndicator={false}
-                contentContainerStyle={{ paddingBottom: 30, flexGrow: 1 }}
+                contentContainerStyle={posts.length === 0 ? styles.emptyContentContainer : styles.contentContainer}
             />
-        </RNSafeAreaView>
+        </SafeAreaView>
     );
 }
 
 const windowWidth = Dimensions.get('window').width;
 
 const styles = StyleSheet.create({
-    safeArea: {
+    container: {
         flex: 1,
         backgroundColor: '#f5f6fa',
     },
@@ -244,18 +235,25 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         paddingHorizontal: 20,
+        paddingVertical: 15,
+        backgroundColor: '#fff',
         elevation: 2,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.1,
         shadowRadius: 4,
     },
-    title: {
-        fontSize: 0.07 * windowWidth,
+    headerTitle: {
+        fontSize: 24,
         fontWeight: 'bold',
         color: '#1abc9c',
     },
-    profileButton: {
+    headerButtons: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    headerButton: {
+        marginLeft: 15,
         padding: 5,
     },
     loadingContainer: {
@@ -263,58 +261,84 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
     },
+    loadingText: {
+        marginTop: 10,
+        fontSize: 16,
+        color: '#636e72',
+    },
+    contentContainer: {
+        paddingBottom: 20,
+    },
+    emptyContentContainer: {
+        flexGrow: 1,
+        paddingBottom: 20,
+    },
     postContainer: {
         backgroundColor: '#fff',
         marginVertical: 8,
-        marginHorizontal: '4%',
+        marginHorizontal: 16,
         borderRadius: 12,
         elevation: 2,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.1,
         shadowRadius: 4,
-        minWidth: 0.9 * windowWidth,
-        maxWidth: '92%',
+        overflow: 'hidden',
     },
-    profileHeader: {
-        padding: 16,
+    postHeader: {
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f0f0f0',
     },
-    profileInfo: {
+    userInfo: {
         flexDirection: 'row',
         alignItems: 'center',
     },
-    avatar: {
-        width: 50,
-        height: 50,
-        borderRadius: 25,
+    userAvatar: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        marginRight: 12,
+        borderWidth: 2,
+        borderColor: '#1abc9c',
+    },
+    placeholderAvatar: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
         backgroundColor: '#1abc9c',
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 12,
+        borderWidth: 2,
+        borderColor: '#16a085',
     },
-    avatarText: {
+    placeholderAvatarText: {
         color: '#fff',
-        fontSize: 20,
+        fontSize: 16,
         fontWeight: 'bold',
     },
-    authorName: {
+    userDetails: {
+        flex: 1,
+    },
+    userName: {
         fontSize: 16,
         fontWeight: 'bold',
         color: '#2d3436',
+        marginBottom: 2,
     },
     postDate: {
         fontSize: 12,
         color: '#636e72',
-        marginTop: 2,
     },
     postImage: {
         width: '100%',
-        height: windowWidth > 400 ? 300 : 200,
-        borderTopLeftRadius: 12,
-        borderTopRightRadius: 12,
+        height: windowWidth > 400 ? 300 : 250,
     },
     postContent: {
-        padding: 16,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
     },
     postDescription: {
         fontSize: 16,
@@ -325,49 +349,59 @@ const styles = StyleSheet.create({
     locationContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginTop: 8,
+        marginTop: 4,
     },
     locationText: {
         fontSize: 14,
         color: '#636e72',
         marginLeft: 4,
     },
-    postActions: {
+    postFooter: {
         flexDirection: 'row',
         paddingHorizontal: 16,
-        paddingBottom: 16,
+        paddingVertical: 12,
+        borderTopWidth: 1,
+        borderTopColor: '#f0f0f0',
     },
     likeButton: {
         flexDirection: 'row',
         alignItems: 'center',
+        marginRight: 20,
     },
     likeCount: {
-        fontSize: 16,
+        fontSize: 14,
         color: '#636e72',
-        marginLeft: 8,
+        marginLeft: 4,
         fontWeight: '600',
     },
-    likedText: {
-        color: '#e74c3c',
+    commentButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    commentCount: {
+        fontSize: 14,
+        color: '#636e72',
+        marginLeft: 4,
+        fontWeight: '600',
     },
     emptyContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        paddingTop: 100,
+        paddingVertical: 50,
+        paddingHorizontal: 20,
     },
     emptyText: {
         fontSize: 18,
-        color: '#636e72',
+        color: '#b2bec3',
         textAlign: 'center',
+        marginTop: 10,
+        fontWeight: '600',
     },
-    bottomButtons: {
-        padding: 16,
-        backgroundColor: '#fff',
-        elevation: 8,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: -2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
+    emptySubText: {
+        fontSize: 14,
+        color: '#b2bec3',
+        textAlign: 'center',
+        marginTop: 5,
     },
 });
