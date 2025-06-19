@@ -174,7 +174,7 @@ export default function HomeScreen({ navigation }) {
                 </TouchableOpacity>
                 <TouchableOpacity 
                     style={styles.headerButton}
-                    onPress={() => navigation.navigate('MinhaContaScreen')}
+                    onPress={() => navigation.navigate('MinhaConta')}
                 >
                     <Ionicons name="person-circle-outline" size={28} color="#1abc9c" />
                 </TouchableOpacity>
