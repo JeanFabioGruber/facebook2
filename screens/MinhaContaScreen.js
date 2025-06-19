@@ -6,6 +6,7 @@ import { CustomTextInput } from '../components/CustomInputs';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { Modal, TouchableWithoutFeedback } from 'react-native';
 
 export default function MinhaContaScreen({ navigation }) {    
     const [user] = useState(auth.currentUser);
@@ -13,7 +14,8 @@ export default function MinhaContaScreen({ navigation }) {
     const [tempData, setTempData] = useState({ nome: '', telefone: '', bio: '', profileImage: null });
     const [isEditing, setIsEditing] = useState(false);
     const [loading, setLoading] = useState(false);
-    
+    const [showImageModal, setShowImageModal] = useState(false);
+
     useEffect(() => {
         const fetchUserData = async () => {
             if (user) {
@@ -77,11 +79,7 @@ export default function MinhaContaScreen({ navigation }) {
     };
 
     const selectImageSource = () => {
-        Alert.alert('Selecionar Foto', 'Escolha uma opção:', [
-            { text: 'Cancelar', style: 'cancel' },
-            { text: 'Galeria', onPress: pickImage },
-            { text: 'Câmera', onPress: takePhoto },
-        ]);
+        setShowImageModal(true);
     };
 
     const saveChanges = async () => {
@@ -143,6 +141,58 @@ export default function MinhaContaScreen({ navigation }) {
 
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: '#f5f6fa' }}>
+            {/* Modal customizado para seleção de imagem */}
+            <Modal
+                visible={showImageModal}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setShowImageModal(false)}
+            >
+                <TouchableWithoutFeedback onPress={() => setShowImageModal(false)}>
+                    <View style={{
+                        flex: 1,
+                        backgroundColor: 'rgba(0,0,0,0.18)',
+                        justifyContent: 'center',
+                        alignItems: 'center'
+                    }}>
+                        <TouchableWithoutFeedback>
+                            <View style={{
+                                backgroundColor: '#fff',
+                                borderRadius: 18,
+                                paddingVertical: 18,
+                                paddingHorizontal: 0,
+                                width: 270,
+                                alignItems: 'stretch',
+                                shadowColor: '#000',
+                                shadowOffset: { width: 0, height: 2 },
+                                shadowOpacity: 0.08,
+                                shadowRadius: 8,
+                                elevation: 6,
+                            }}>
+                                <Text style={{ fontSize: 17, fontWeight: '600', marginBottom: 10, color: '#222', textAlign: 'center' }}>Selecionar Foto</Text>
+                                <TouchableOpacity
+                                    style={{ paddingVertical: 14, alignItems: 'center', borderBottomWidth: 1, borderColor: '#f0f0f0' }}
+                                    onPress={() => { setShowImageModal(false); pickImage(); }}
+                                >
+                                    <Text style={{ fontSize: 16, color: '#1abc9c', fontWeight: '500' }}>Escolher da Galeria</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={{ paddingVertical: 14, alignItems: 'center', borderBottomWidth: 1, borderColor: '#f0f0f0' }}
+                                    onPress={() => { setShowImageModal(false); takePhoto(); }}
+                                >
+                                    <Text style={{ fontSize: 16, color: '#1abc9c', fontWeight: '500' }}>Tirar Foto</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={{ paddingVertical: 14, alignItems: 'center' }}
+                                    onPress={() => setShowImageModal(false)}
+                                >
+                                    <Text style={{ fontSize: 16, color: '#e74c3c', fontWeight: '500' }}>Cancelar</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </TouchableWithoutFeedback>
+                    </View>
+                </TouchableWithoutFeedback>
+            </Modal>
             <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
                 {/* Header */}
                 <View style={styles.header}>
@@ -160,8 +210,7 @@ export default function MinhaContaScreen({ navigation }) {
                     <View style={styles.imageContainer}>
                         <TouchableOpacity 
                             style={styles.imageWrapper}
-                            onPress={isEditing ? selectImageSource : null}
-                            disabled={!isEditing}
+                            onPress={selectImageSource}
                         >
                             {tempData.profileImage ? (
                                 <Image source={{ uri: tempData.profileImage }} style={styles.profileImage} />

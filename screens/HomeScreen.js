@@ -7,11 +7,15 @@ import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "../firebase";
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { Dimensions } from "react-native";
+import { SafeAreaView as RNSafeAreaView } from 'react-native-safe-area-context';
+import { StatusBar } from 'react-native';
 
 export default function HomeScreen() {
     const [posts, setPosts] = useState([]);
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [likeLoading, setLikeLoading] = useState({});
     const navigation = useNavigation();
 
     useEffect(() => {
@@ -60,46 +64,57 @@ export default function HomeScreen() {
     };
 
     const handleLike = async (postId) => {
-        if (!user) return;
-        
+        if (!user || likeLoading[postId]) return;
+
+        setLikeLoading(prev => ({ ...prev, [postId]: true }));
+
         try {
             const postRef = doc(db, 'posts', postId);
             const postDoc = await getDoc(postRef);
-            
+
             if (postDoc.exists()) {
                 const postData = postDoc.data();
                 const likedBy = postData.likedBy || [];
-                
+                let updatedLikedBy, likeChange;
+
                 if (likedBy.includes(user.uid)) {
                     // Remover curtida
-                    const updatedLikedBy = likedBy.filter(uid => uid !== user.uid);
-                    await updateDoc(postRef, {
-                        likes: increment(-1),
-                        likedBy: updatedLikedBy
-                    });
+                    updatedLikedBy = likedBy.filter(uid => uid !== user.uid);
+                    likeChange = -1;
                 } else {
                     // Adicionar curtida
-                    await updateDoc(postRef, {
-                        likes: increment(1),
-                        likedBy: [...likedBy, user.uid]
-                    });
+                    updatedLikedBy = [...likedBy, user.uid];
+                    likeChange = 1;
                 }
-                
-                // Recarregar posts
-                loadPosts();
+
+                await updateDoc(postRef, {
+                    likes: increment(likeChange),
+                    likedBy: updatedLikedBy
+                });
+
+                // Atualiza o post localmente sem recarregar tudo
+                setPosts(prevPosts =>
+                    prevPosts.map(post =>
+                        post.id === postId
+                            ? {
+                                ...post,
+                                likes: (post.likes || 0) + likeChange,
+                                likedBy: updatedLikedBy
+                            }
+                            : post
+                    )
+                );
             }
         } catch (error) {
             console.error('Erro ao curtir post:', error);
             Alert.alert('Erro', 'Não foi possível curtir a publicação');
+        } finally {
+            setLikeLoading(prev => ({ ...prev, [postId]: false }));
         }
     };
 
     const openProfile = (userId) => {
-        if (userId === user?.uid) {
-            navigation.navigate('MinhaConta');
-        } else {
-            navigation.navigate('Profile', { userId });
-        }
+        navigation.navigate('Profile', { userId });
     };
 
     const formatDate = (timestamp) => {
@@ -110,7 +125,8 @@ export default function HomeScreen() {
 
     const renderPost = ({ item }) => {
         const isLiked = item.likedBy?.includes(user?.uid) || false;
-        
+        const isLoading = likeLoading[item.id];
+
         return (
             <View style={styles.postContainer}>
                 <TouchableOpacity 
@@ -135,12 +151,15 @@ export default function HomeScreen() {
                 </TouchableOpacity>
 
                 {item.imageUrl && (
-                    <Image source={{ uri: item.imageUrl }} style={styles.postImage} />
+                    <Image
+                        source={{ uri: item.imageUrl }}
+                        style={styles.postImage}
+                        resizeMode="cover"
+                    />
                 )}
 
                 <View style={styles.postContent}>
                     <Text style={styles.postDescription}>{item.description}</Text>
-                    
                     {item.location && (
                         <View style={styles.locationContainer}>
                             <Ionicons name="location-outline" size={16} color="#636e72" />
@@ -150,18 +169,23 @@ export default function HomeScreen() {
                 </View>
 
                 <View style={styles.postActions}>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={styles.likeButton}
                         onPress={() => handleLike(item.id)}
+                        disabled={isLoading}
                     >
-                        <Ionicons 
-                            name={isLiked ? "heart" : "heart-outline"} 
-                            size={24} 
-                            color={isLiked ? "#e74c3c" : "#636e72"} 
+                        <Ionicons
+                            name={isLiked ? "heart" : "heart-outline"}
+                            size={24}
+                            color={isLiked ? "#e74c3c" : "#636e72"}
                         />
-                        <Text style={[styles.likeCount, isLiked && styles.likedText]}>
-                            {item.likes || 0}
-                        </Text>
+                        {isLoading ? (
+                            <Text style={[styles.likeCount, styles.likedText]}>...</Text>
+                        ) : (
+                            <Text style={[styles.likeCount, isLiked && styles.likedText]}>
+                                {item.likes || 0}
+                            </Text>
+                        )}
                     </TouchableOpacity>
                 </View>
             </View>
@@ -179,7 +203,8 @@ export default function HomeScreen() {
     }
 
     return (
-        <SafeAreaView style={styles.container}>
+        <RNSafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+            <StatusBar backgroundColor="#f5f6fa" barStyle="dark-content" />
             <View style={styles.header}>
                 <Text style={styles.title}>Feed</Text>
                 <TouchableOpacity 
@@ -189,7 +214,6 @@ export default function HomeScreen() {
                     <Ionicons name="person-circle-outline" size={32} color="#1abc9c" />
                 </TouchableOpacity>
             </View>
-
             <FlatList
                 data={posts}
                 renderItem={renderPost}
@@ -202,13 +226,16 @@ export default function HomeScreen() {
                     </View>
                 }
                 showsVerticalScrollIndicator={false}
-            />           
-        </SafeAreaView>
+                contentContainerStyle={{ paddingBottom: 30, flexGrow: 1 }}
+            />
+        </RNSafeAreaView>
     );
 }
 
+const windowWidth = Dimensions.get('window').width;
+
 const styles = StyleSheet.create({
-    container: {
+    safeArea: {
         flex: 1,
         backgroundColor: '#f5f6fa',
     },
@@ -217,8 +244,6 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         paddingHorizontal: 20,
-        paddingVertical: 15,
-        backgroundColor: '#fff',
         elevation: 2,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
@@ -226,7 +251,7 @@ const styles = StyleSheet.create({
         shadowRadius: 4,
     },
     title: {
-        fontSize: 28,
+        fontSize: 0.07 * windowWidth,
         fontWeight: 'bold',
         color: '#1abc9c',
     },
@@ -241,13 +266,15 @@ const styles = StyleSheet.create({
     postContainer: {
         backgroundColor: '#fff',
         marginVertical: 8,
-        marginHorizontal: 16,
+        marginHorizontal: '4%',
         borderRadius: 12,
         elevation: 2,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.1,
         shadowRadius: 4,
+        minWidth: 0.9 * windowWidth,
+        maxWidth: '92%',
     },
     profileHeader: {
         padding: 16,
@@ -282,8 +309,9 @@ const styles = StyleSheet.create({
     },
     postImage: {
         width: '100%',
-        height: 300,
-        resizeMode: 'cover',
+        height: windowWidth > 400 ? 300 : 200,
+        borderTopLeftRadius: 12,
+        borderTopRightRadius: 12,
     },
     postContent: {
         padding: 16,
