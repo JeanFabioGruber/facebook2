@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     View,
     Text,
@@ -10,7 +10,8 @@ import {
     ActivityIndicator,
     Alert,
     RefreshControl,
-    Dimensions
+    Dimensions,
+    Animated
 } from 'react-native';
 import { db, auth } from '../firebase';
 import { collection, query, orderBy, getDocs, doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
@@ -20,7 +21,11 @@ export default function HomeScreen({ navigation }) {
     const [posts, setPosts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
-    const currentUser = auth.currentUser;
+    const currentUser = auth.currentUser;    
+    
+    const scrollY = useRef(new Animated.Value(0)).current;
+    const headerTranslateY = useRef(new Animated.Value(0)).current;
+    const lastScrollY = useRef(0);
 
     useEffect(() => {
         loadPosts();
@@ -158,6 +163,33 @@ export default function HomeScreen({ navigation }) {
         setRefreshing(false);
     };
 
+    const handleScroll = Animated.event(
+        [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+        {
+            useNativeDriver: false,
+            listener: (event) => {
+                const currentScrollY = event.nativeEvent.contentOffset.y;
+                const diff = currentScrollY - lastScrollY.current;
+                
+                if (diff > 0 && currentScrollY > 50) {                   
+                    Animated.timing(headerTranslateY, {
+                        toValue: -80,
+                        duration: 300,
+                        useNativeDriver: true,
+                    }).start();
+                } else if (diff < 0) {                  
+                    Animated.timing(headerTranslateY, {
+                        toValue: 0,
+                        duration: 300,
+                        useNativeDriver: true,
+                    }).start();
+                }
+                
+                lastScrollY.current = currentScrollY;
+            },
+        }
+    );
+
     const renderPost = ({ item }) => {
         const isLiked = item.likedBy?.includes(currentUser?.uid) || false;
         
@@ -237,31 +269,27 @@ export default function HomeScreen({ navigation }) {
         );
     };
 
-    const renderHeader = () => (
-        <View style={styles.header}>
-            <Text style={styles.headerTitle}>Facebook</Text>
-            <View style={styles.headerButtons}>
-                <TouchableOpacity 
-                    style={styles.headerButton}
-                    onPress={() => navigation.navigate('AddPostScreen')}
-                >
-                    <Ionicons name="add-circle-outline" size={28} color="#1abc9c" />
-                </TouchableOpacity>
-                <TouchableOpacity 
-                    style={styles.headerButton}
-                    onPress={() => navigation.navigate('MinhaConta')}
-                >
-                    <Ionicons name="person-circle-outline" size={28} color="#1abc9c" />
-                </TouchableOpacity>
-            </View>
-        </View>
-    );
-
     if (loading && posts.length === 0) {
         return (
             <SafeAreaView style={styles.container}>
-                {renderHeader()}
-                <View style={styles.loadingContainer}>
+                <Animated.View style={[styles.header, { transform: [{ translateY: headerTranslateY }] }]}>
+                    <Text style={styles.headerTitle}>Feed</Text>
+                    <View style={styles.headerButtons}>
+                        <TouchableOpacity 
+                            style={styles.headerButton}
+                            onPress={() => navigation.navigate('AddPostScreen')}
+                        >
+                            <Ionicons name="add-circle-outline" size={28} color="#1abc9c" />
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                            style={styles.headerButton}
+                            onPress={() => navigation.navigate('MinhaConta')}
+                        >
+                            <Ionicons name="person-circle-outline" size={28} color="#1abc9c" />
+                        </TouchableOpacity>
+                    </View>
+                </Animated.View>
+                <View style={[styles.loadingContainer, { paddingTop: 80 }]}>
                     <ActivityIndicator size="large" color="#1abc9c" />
                     <Text style={styles.loadingText}>Carregando posts...</Text>
                 </View>
@@ -271,17 +299,40 @@ export default function HomeScreen({ navigation }) {
 
     return (
         <SafeAreaView style={styles.container}>
-            {renderHeader()}
+            <Animated.View style={[styles.header, { transform: [{ translateY: headerTranslateY }] }]}>
+                <Text style={styles.headerTitle}>Feed</Text>
+                <View style={styles.headerButtons}>
+                    <TouchableOpacity 
+                        style={styles.headerButton}
+                        onPress={() => navigation.navigate('AddPostScreen')}
+                    >
+                        <Ionicons name="add-circle-outline" size={28} color="#1abc9c" />
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                        style={styles.headerButton}
+                        onPress={() => navigation.navigate('MinhaConta')}
+                    >
+                        <Ionicons name="person-circle-outline" size={28} color="#1abc9c" />
+                    </TouchableOpacity>
+                </View>
+            </Animated.View>
             <FlatList
                 data={posts}
                 renderItem={renderPost}
                 keyExtractor={item => item.id}
+                onScroll={handleScroll}
+                scrollEventThrottle={16}
+                contentContainerStyle={[
+                    posts.length === 0 ? styles.emptyContentContainer : styles.contentContainer,
+                    { paddingTop: 80 }
+                ]}
                 refreshControl={
                     <RefreshControl
                         refreshing={refreshing}
                         onRefresh={onRefresh}
                         colors={['#1abc9c']}
                         tintColor="#1abc9c"
+                        progressViewOffset={80}
                     />
                 }
                 ListEmptyComponent={
@@ -292,7 +343,6 @@ export default function HomeScreen({ navigation }) {
                     </View>
                 }
                 showsVerticalScrollIndicator={false}
-                contentContainerStyle={posts.length === 0 ? styles.emptyContentContainer : styles.contentContainer}
             />
         </SafeAreaView>
     );
@@ -304,19 +354,25 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#f5f6fa',
+        paddingTop: 20,
     },
     header: {
+        position: 'absolute',
+        top: 20,
+        left: 0,
+        right: 0,
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
         paddingHorizontal: 20,
         paddingVertical: 15,
         backgroundColor: '#fff',
-        elevation: 2,
+        elevation: 4,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.1,
         shadowRadius: 4,
+        zIndex: 1000,
     },
     headerTitle: {
         fontSize: 24,
