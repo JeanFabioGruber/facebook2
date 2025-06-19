@@ -32,20 +32,20 @@ export default function HomeScreen({ navigation }) {
     }, []);
 
     const formatDate = (timestamp) => {
-        if (!timestamp) return '';
-        try {
-            const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-            const now = new Date();
-            const diffTime = Math.abs(now - date);
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-            
-            if (diffDays === 1) return 'Ontem';
-            if (diffDays < 7) return `${diffDays} dias atrás`;
-            return date.toLocaleDateString('pt-BR');
-        } catch (error) {
-            return '';
-        }
-    };
+    if (!timestamp) return '';
+    try {
+        const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+        const day = date.getDate().toString().padStart(2, '0');
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const year = date.getFullYear();
+        const hours = date.getHours().toString().padStart(2, '0');
+        const minutes = date.getMinutes().toString().padStart(2, '0');
+        
+        return `${day}/${month}/${year} ${hours}:${minutes}`;
+    } catch (error) {
+        return '';
+    }
+};
 
     const loadPosts = async () => {
         setLoading(true);
