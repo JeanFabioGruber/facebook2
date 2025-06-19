@@ -31,7 +31,7 @@ export default function MinhaContaScreen({ navigation }) {
     const [tempData, setTempData] = useState({ nome: '', telefone: '', bio: '', profileImage: null });
     const [isEditing, setIsEditing] = useState(false);
     const [loading, setLoading] = useState(false);
-    const [showImageModal, setShowImageModal] = useState(false);    
+    const [showImageModal, setShowImageModal] = useState(false);
 
     useEffect(() => {
         const fetchUserData = async () => {
@@ -45,7 +45,7 @@ export default function MinhaContaScreen({ navigation }) {
             }
         };
         fetchUserData();
-    }, []);    
+    }, []);
 
     const processImage = async (result) => {
         if (!result.canceled) {
@@ -56,7 +56,18 @@ export default function MinhaContaScreen({ navigation }) {
                 return;
             }
             
-            setTempData(prev => ({ ...prev, profileImage: base64Image }));
+            setTempData(prev => ({ ...prev, profileImage: base64Image }));            
+            await saveImageToDatabase(base64Image);
+        }
+    };
+
+    const saveImageToDatabase = async (imageData) => {
+        try {
+            await updateDoc(doc(db, "users", user.uid), { profileImage: imageData });
+            setUserData(prev => ({ ...prev, profileImage: imageData }));
+        } catch (error) {
+            console.error('Erro ao salvar imagem:', error);
+            Alert.alert('Erro', 'Não foi possível salvar a imagem');
         }
     };
 
@@ -123,6 +134,25 @@ export default function MinhaContaScreen({ navigation }) {
         setIsEditing(false);
     };
 
+    const removePhotoAndSave = async () => {
+        Alert.alert('Remover Foto', 'Deseja remover a foto de perfil?', [
+            { text: 'Cancelar', style: 'cancel' },
+            { 
+                text: 'Remover', 
+                onPress: async () => {
+                    setTempData(prev => ({ ...prev, profileImage: null }));
+                    setUserData(prev => ({ ...prev, profileImage: null }));
+                    try {
+                        await updateDoc(doc(db, "users", user.uid), { profileImage: null });
+                    } catch (error) {
+                        console.error('Erro ao remover foto:', error);
+                        Alert.alert('Erro', 'Não foi possível remover a foto');
+                    }
+                }
+            },
+        ]);
+    };
+
     const removePhoto = () => {
         Alert.alert('Remover Foto', 'Deseja remover a foto de perfil?', [
             { text: 'Cancelar', style: 'cancel' },
@@ -182,11 +212,20 @@ export default function MinhaContaScreen({ navigation }) {
                                 >
                                     <Text style={{ fontSize: 16, color: '#1abc9c', fontWeight: '500' }}>Tirar Foto</Text>
                                 </TouchableOpacity>
+                                {/* Adicionar opção de remover foto se existir uma */}
+                                {tempData.profileImage && (
+                                    <TouchableOpacity
+                                        style={{ paddingVertical: 14, alignItems: 'center', borderBottomWidth: 1, borderColor: '#f0f0f0' }}
+                                        onPress={() => { setShowImageModal(false); removePhotoAndSave(); }}
+                                    >
+                                        <Text style={{ fontSize: 16, color: '#e74c3c', fontWeight: '500' }}>Remover Foto</Text>
+                                    </TouchableOpacity>
+                                )}
                                 <TouchableOpacity
                                     style={{ paddingVertical: 14, alignItems: 'center' }}
                                     onPress={() => setShowImageModal(false)}
                                 >
-                                    <Text style={{ fontSize: 16, color: '#e74c3c', fontWeight: '500' }}>Cancelar</Text>
+                                    <Text style={{ fontSize: 16, color: '#636e72', fontWeight: '500' }}>Cancelar</Text>
                                 </TouchableOpacity>
                             </View>
                         </TouchableWithoutFeedback>
@@ -220,21 +259,10 @@ export default function MinhaContaScreen({ navigation }) {
                                         {userData.nome?.charAt(0)?.toUpperCase() || 'U'}
                                     </Text>
                                 </View>
-                            )}
-                            {isEditing && (
-                                <View style={styles.cameraIcon}>
-                                    <Ionicons name="camera" size={20} color="#fff" />
-                                </View>
-                            )}
-                        </TouchableOpacity>
-                        {isEditing && tempData.profileImage && (
-                            <TouchableOpacity style={styles.removeIcon} onPress={removePhoto}>
-                                <Ionicons name="trash" size={16} color="#fff" />
-                            </TouchableOpacity>
-                        )}
+                            )}                            
+                        </TouchableOpacity>                       
                     </View>
-                    <Text style={styles.userName}>{userData.nome || 'Usuário'}</Text>
-                    <Text style={styles.userEmail}>{user.email}</Text>
+                    <Text style={styles.userName}>{userData.nome || 'Usuário'}</Text>                    
                 </View>
 
                 {/* User Info */}
