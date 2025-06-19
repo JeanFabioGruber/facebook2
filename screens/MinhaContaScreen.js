@@ -8,13 +8,30 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Modal, TouchableWithoutFeedback } from 'react-native';
 
+const InfoField = ({ label, value, onChangeText, keyboardType, multiline, isEditing, styles }) => (
+    <View style={styles.infoItem}>
+        <Text style={styles.label}>{label}</Text>
+        {isEditing && label !== 'E-mail' ? (
+            <CustomTextInput
+                placeholder={`Digite seu ${label.toLowerCase()}`}
+                value={value}
+                setValue={onChangeText}
+                keyboardType={keyboardType}
+                multiline={multiline}
+            />
+        ) : (
+            <Text style={styles.value}>{value || (label === 'Bio' ? 'Nenhuma bio adicionada' : '-')}</Text>
+        )}
+    </View>
+);
+
 export default function MinhaContaScreen({ navigation }) {    
     const [user] = useState(auth.currentUser);
     const [userData, setUserData] = useState({ nome: '', telefone: '', bio: '', profileImage: null });
     const [tempData, setTempData] = useState({ nome: '', telefone: '', bio: '', profileImage: null });
     const [isEditing, setIsEditing] = useState(false);
     const [loading, setLoading] = useState(false);
-    const [showImageModal, setShowImageModal] = useState(false);
+    const [showImageModal, setShowImageModal] = useState(false);    
 
     useEffect(() => {
         const fetchUserData = async () => {
@@ -28,7 +45,7 @@ export default function MinhaContaScreen({ navigation }) {
             }
         };
         fetchUserData();
-    }, []);
+    }, []);    
 
     const processImage = async (result) => {
         if (!result.canceled) {
@@ -119,23 +136,6 @@ export default function MinhaContaScreen({ navigation }) {
             { text: 'Sair', onPress: () => signOut(auth) }
         ]);
     };
-
-    const InfoField = ({ label, value, onChangeText, keyboardType, multiline }) => (
-        <View style={styles.infoItem}>
-            <Text style={styles.label}>{label}</Text>
-            {isEditing && label !== 'E-mail' ? (
-                <CustomTextInput
-                    placeholder={`Digite seu ${label.toLowerCase()}`}
-                    value={value}
-                    setValue={onChangeText}
-                    keyboardType={keyboardType}
-                    multiline={multiline}
-                />
-            ) : (
-                <Text style={styles.value}>{value || (label === 'Bio' ? 'Nenhuma bio adicionada' : '-')}</Text>
-            )}
-        </View>
-    );
 
     if (!user) return null;
 
@@ -243,20 +243,31 @@ export default function MinhaContaScreen({ navigation }) {
                         label="Nome" 
                         value={tempData.nome} 
                         onChangeText={(value) => setTempData(prev => ({ ...prev, nome: value }))} 
+                        isEditing={isEditing}
+                        styles={styles}
                     />
                     <InfoField 
                         label="Telefone" 
                         value={tempData.telefone} 
                         onChangeText={(value) => setTempData(prev => ({ ...prev, telefone: value }))}
                         keyboardType="phone-pad"
+                        isEditing={isEditing}
+                        styles={styles}
                     />
                     <InfoField 
                         label="Bio" 
                         value={tempData.bio} 
                         onChangeText={(value) => setTempData(prev => ({ ...prev, bio: value }))}
                         multiline={true}
+                        isEditing={isEditing}
+                        styles={styles}
                     />
-                    <InfoField label="E-mail" value={user.email} />
+                    <InfoField 
+                        label="E-mail" 
+                        value={user.email} 
+                        isEditing={isEditing}
+                        styles={styles}
+                    />
                 </View>
 
                 {/* Buttons */}
