@@ -13,13 +13,14 @@ import {
     Dimensions
 } from 'react-native';
 import { db, auth } from '../firebase';
-import { collection, query, orderBy, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, orderBy, getDocs, doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function HomeScreen({ navigation }) {
     const [posts, setPosts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const currentUser = auth.currentUser;
 
     useEffect(() => {
         loadPosts();
@@ -55,7 +56,6 @@ export default function HomeScreen({ navigation }) {
                 ...doc.data()
             }));
 
-            // Buscar dados do usuário para cada post
             const postsWithUserData = await Promise.all(
                 postsData.map(async (post) => {
                     try {
@@ -65,20 +65,26 @@ export default function HomeScreen({ navigation }) {
                             return {
                                 ...post,
                                 userName: userData.nome || 'Usuário',
-                                userProfileImage: userData.profileImage || null
+                                userProfileImage: userData.profileImage || null,                               
+                                likedBy: post.likedBy || [],
+                                likes: post.likes || 0
                             };
                         }
                         return {
                             ...post,
                             userName: 'Usuário',
-                            userProfileImage: null
+                            userProfileImage: null,
+                            likedBy: post.likedBy || [],
+                            likes: post.likes || 0
                         };
                     } catch (error) {
                         console.error('Erro ao buscar dados do usuário:', error);
                         return {
                             ...post,
                             userName: 'Usuário',
-                            userProfileImage: null
+                            userProfileImage: null,
+                            likedBy: post.likedBy || [],
+                            likes: post.likes || 0
                         };
                     }
                 })
@@ -93,74 +99,143 @@ export default function HomeScreen({ navigation }) {
         }
     };
 
+    const toggleLike = async (postId) => {
+        if (!currentUser) {
+            Alert.alert('Erro', 'Você precisa estar logado para curtir posts');
+            return;
+        }
+
+        try {
+            const postRef = doc(db, 'posts', postId);
+            const postDoc = await getDoc(postRef);
+            
+            if (!postDoc.exists()) {
+                Alert.alert('Erro', 'Post não encontrado');
+                return;
+            }
+
+            const postData = postDoc.data();
+            const likedBy = postData.likedBy || [];
+            const isLiked = likedBy.includes(currentUser.uid);            
+            setPosts(prevPosts => 
+                prevPosts.map(post => {
+                    if (post.id === postId) {
+                        const newLikedBy = isLiked 
+                            ? post.likedBy.filter(id => id !== currentUser.uid)
+                            : [...post.likedBy, currentUser.uid];
+                        
+                        return {
+                            ...post,
+                            likedBy: newLikedBy,
+                            likes: newLikedBy.length
+                        };
+                    }
+                    return post;
+                })
+            );            
+            if (isLiked) {                
+                await updateDoc(postRef, {
+                    likedBy: arrayRemove(currentUser.uid),
+                    likes: Math.max(0, (postData.likes || 0) - 1)
+                });
+            } else {                
+                await updateDoc(postRef, {
+                    likedBy: arrayUnion(currentUser.uid),
+                    likes: (postData.likes || 0) + 1
+                });
+            }
+
+        } catch (error) {
+            console.error('Erro ao curtir post:', error);
+            Alert.alert('Erro', 'Não foi possível curtir o post');            
+            loadPosts();
+        }
+    };
+
     const onRefresh = async () => {
         setRefreshing(true);
         await loadPosts();
         setRefreshing(false);
     };
 
-    const renderPost = ({ item }) => (
-        <View style={styles.postContainer}>
-            {/* Header do post com foto e nome do usuário */}
-            <View style={styles.postHeader}>
-                <TouchableOpacity 
-                    style={styles.userInfo}
-                    onPress={() => navigation.navigate('ProfileScreen', { userId: item.userId })}
-                >
-                    {item.userProfileImage ? (
-                        <Image 
-                            source={{ uri: item.userProfileImage }} 
-                            style={styles.userAvatar} 
-                        />
-                    ) : (
-                        <View style={styles.placeholderAvatar}>
-                            <Text style={styles.placeholderAvatarText}>
-                                {item.userName?.charAt(0)?.toUpperCase() || 'U'}
-                            </Text>
+    const renderPost = ({ item }) => {
+        const isLiked = item.likedBy?.includes(currentUser?.uid) || false;
+        
+        return (
+            <View style={styles.postContainer}>
+                {/* Header do post com foto e nome do usuário */}
+                <View style={styles.postHeader}>
+                    <TouchableOpacity 
+                        style={styles.userInfo}
+                        onPress={() => navigation.navigate('ProfileScreen', { userId: item.userId })}
+                    >
+                        {item.userProfileImage ? (
+                            <Image 
+                                source={{ uri: item.userProfileImage }} 
+                                style={styles.userAvatar} 
+                            />
+                        ) : (
+                            <View style={styles.placeholderAvatar}>
+                                <Text style={styles.placeholderAvatarText}>
+                                    {item.userName?.charAt(0)?.toUpperCase() || 'U'}
+                                </Text>
+                            </View>
+                        )}
+                        <View style={styles.userDetails}>
+                            <Text style={styles.userName}>{item.userName}</Text>
+                            <Text style={styles.postDate}>{formatDate(item.createdAt)}</Text>
+                        </View>
+                    </TouchableOpacity>
+                </View>
+
+                {/* Imagem do post */}
+                {item.imageUrl && (
+                    <Image
+                        source={{ uri: item.imageUrl }}
+                        style={styles.postImage}
+                        resizeMode="cover"
+                    />
+                )}
+
+                {/* Conteúdo do post */}
+                <View style={styles.postContent}>
+                    <Text style={styles.postDescription}>{item.description}</Text>
+                    
+                    {item.location && (
+                        <View style={styles.locationContainer}>
+                            <Ionicons name="location-outline" size={14} color="#636e72" />
+                            <Text style={styles.locationText}>{item.location}</Text>
                         </View>
                     )}
-                    <View style={styles.userDetails}>
-                        <Text style={styles.userName}>{item.userName}</Text>
-                        <Text style={styles.postDate}>{formatDate(item.createdAt)}</Text>
-                    </View>
-                </TouchableOpacity>
-            </View>
+                </View>
 
-            {/* Imagem do post */}
-            {item.imageUrl && (
-                <Image
-                    source={{ uri: item.imageUrl }}
-                    style={styles.postImage}
-                    resizeMode="cover"
-                />
-            )}
-
-            {/* Conteúdo do post */}
-            <View style={styles.postContent}>
-                <Text style={styles.postDescription}>{item.description}</Text>
-                
-                {item.location && (
-                    <View style={styles.locationContainer}>
-                        <Ionicons name="location-outline" size={14} color="#636e72" />
-                        <Text style={styles.locationText}>{item.location}</Text>
-                    </View>
-                )}
+                {/* Footer do post */}
+                <View style={styles.postFooter}>
+                    <TouchableOpacity 
+                        style={styles.likeButton}
+                        onPress={() => toggleLike(item.id)}
+                    >
+                        <Ionicons 
+                            name={isLiked ? "heart" : "heart-outline"} 
+                            size={24} 
+                            color={isLiked ? "#e74c3c" : "#636e72"} 
+                        />
+                        <Text style={[
+                            styles.likeCount,
+                            isLiked && styles.likedText
+                        ]}>
+                            {item.likes || 0}
+                        </Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity style={styles.commentButton}>
+                        <Ionicons name="chatbubble-outline" size={24} color="#636e72" />
+                        <Text style={styles.commentCount}>{item.comments || 0}</Text>
+                    </TouchableOpacity>
+                </View>
             </View>
-
-            {/* Footer do post */}
-            <View style={styles.postFooter}>
-                <TouchableOpacity style={styles.likeButton}>
-                    <Ionicons name="heart-outline" size={24} color="#636e72" />
-                    <Text style={styles.likeCount}>{item.likes || 0}</Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity style={styles.commentButton}>
-                    <Ionicons name="chatbubble-outline" size={24} color="#636e72" />
-                    <Text style={styles.commentCount}>{item.comments || 0}</Text>
-                </TouchableOpacity>
-            </View>
-        </View>
-    );
+        );
+    };
 
     const renderHeader = () => (
         <View style={styles.header}>
@@ -367,6 +442,9 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         marginRight: 20,
+        paddingVertical: 5,
+        paddingHorizontal: 8,
+        borderRadius: 20,
     },
     likeCount: {
         fontSize: 14,
@@ -374,9 +452,15 @@ const styles = StyleSheet.create({
         marginLeft: 4,
         fontWeight: '600',
     },
+    likedText: {
+        color: '#e74c3c',
+        fontWeight: 'bold',
+    },
     commentButton: {
         flexDirection: 'row',
         alignItems: 'center',
+        paddingVertical: 5,
+        paddingHorizontal: 8,
     },
     commentCount: {
         fontSize: 14,
