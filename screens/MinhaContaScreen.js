@@ -170,7 +170,7 @@ export default function MinhaContaScreen({ navigation }) {
     if (!user) return null;
 
     return (
-        <SafeAreaView style={{ flex: 1, backgroundColor: '#f5f6fa' }}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#f5f6fa', }}>
             {/* Modal customizado para seleção de imagem */}
             <Modal
                 visible={showImageModal}
@@ -327,6 +327,7 @@ const styles = StyleSheet.create({
         paddingVertical: 15,
         backgroundColor: '#fff',
         elevation: 2,
+        paddingTop: 40,
     },
     headerButton: { padding: 5 },
     headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#2d3436' },
