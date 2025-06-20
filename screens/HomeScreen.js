@@ -12,24 +12,23 @@ import {
     RefreshControl,
     Dimensions,
     Animated,
-    TextInput // Adicionado para busca
+    TextInput,
+    Modal,
+    TouchableWithoutFeedback
 } from 'react-native';
 import { db, auth } from '../firebase';
-import { collection, query, orderBy, getDocs, doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { collection, query, orderBy, getDocs, doc, getDoc, updateDoc, arrayUnion, arrayRemove, deleteDoc, where } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function HomeScreen({ navigation }) {
-    // Estado dos posts
     const [posts, setPosts] = useState([]);
-    // Estado de loading
     const [loading, setLoading] = useState(true);
-    // Estado de refresh
-    const [refreshing, setRefreshing] = useState(false);
-    // Estado do campo de busca
+    const [refreshing, setRefreshing] = useState(false);    
     const [search, setSearch] = useState('');
-    const currentUser = auth.currentUser;    
-    
-    // Animação do header
+    const [selectedPostId, setSelectedPostId] = useState(null);
+    const [showPostMenu, setShowPostMenu] = useState(false);
+    const [deleting, setDeleting] = useState(false);
+    const currentUser = auth.currentUser;     
     const scrollY = useRef(new Animated.Value(0)).current;
     const headerTranslateY = useRef(new Animated.Value(0)).current;
     const lastScrollY = useRef(0);
@@ -38,24 +37,22 @@ export default function HomeScreen({ navigation }) {
         loadPosts();
     }, []);
 
-    // Formata a data do post
     const formatDate = (timestamp) => {
-    if (!timestamp) return '';
-    try {
-        const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-        const day = date.getDate().toString().padStart(2, '0');
-        const month = (date.getMonth() + 1).toString().padStart(2, '0');
-        const year = date.getFullYear();
-        const hours = date.getHours().toString().padStart(2, '0');
-        const minutes = date.getMinutes().toString().padStart(2, '0');
-        
-        return `${day}/${month}/${year} ${hours}:${minutes}`;
-    } catch (error) {
-        return '';
-    }
-};
+        if (!timestamp) return '';
+        try {
+            const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+            const day = date.getDate().toString().padStart(2, '0');
+            const month = (date.getMonth() + 1).toString().padStart(2, '0');
+            const year = date.getFullYear();
+            const hours = date.getHours().toString().padStart(2, '0');
+            const minutes = date.getMinutes().toString().padStart(2, '0');
+            
+            return `${day}/${month}/${year} ${hours}:${minutes}`;
+        } catch (error) {
+            return '';
+        }
+    };
 
-    // Carrega os posts do Firestore
     const loadPosts = async () => {
         setLoading(true);
         try {
@@ -69,8 +66,6 @@ export default function HomeScreen({ navigation }) {
                 id: doc.id,
                 ...doc.data()
             }));
-
-            // Busca dados do usuário para cada post
             const postsWithUserData = await Promise.all(
                 postsData.map(async (post) => {
                     try {
@@ -83,7 +78,8 @@ export default function HomeScreen({ navigation }) {
                                 userProfileImage: userData.profileImage || null,                               
                                 likedBy: post.likedBy || [],
                                 likes: post.likes || 0,
-                                comments: post.comments || 0
+                                comments: post.comments || 0,
+                                isOwnPost: post.userId === currentUser?.uid
                             };
                         }
                         return {
@@ -92,7 +88,8 @@ export default function HomeScreen({ navigation }) {
                             userProfileImage: null,
                             likedBy: post.likedBy || [],
                             likes: post.likes || 0,
-                            comments: post.comments || 0
+                            comments: post.comments || 0,
+                            isOwnPost: post.userId === currentUser?.uid
                         };
                     } catch (error) {
                         console.error('Erro ao buscar dados do usuário:', error);
@@ -102,7 +99,8 @@ export default function HomeScreen({ navigation }) {
                             userProfileImage: null,
                             likedBy: post.likedBy || [],
                             likes: post.likes || 0,
-                            comments: post.comments || 0
+                            comments: post.comments || 0,
+                            isOwnPost: post.userId === currentUser?.uid
                         };
                     }
                 })
@@ -117,7 +115,6 @@ export default function HomeScreen({ navigation }) {
         }
     };
 
-    // Função para curtir/descurtir post
     const toggleLike = async (postId) => {
         if (!currentUser) {
             Alert.alert('Erro', 'Você precisa estar logado para curtir posts');
@@ -171,14 +168,12 @@ export default function HomeScreen({ navigation }) {
         }
     };
 
-    // Atualiza lista ao puxar para baixo
     const onRefresh = async () => {
         setRefreshing(true);
         await loadPosts();
         setRefreshing(false);
     };
 
-    // Animação do header ao rolar
     const handleScroll = Animated.event(
         [{ nativeEvent: { contentOffset: { y: scrollY } } }],
         {
@@ -206,13 +201,73 @@ export default function HomeScreen({ navigation }) {
         }
     );
 
-    // Filtra posts conforme busca
+    const showPostOptions = (postId) => {
+        setSelectedPostId(postId);
+        setShowPostMenu(true);
+    };
+
+    const hidePostMenu = () => {
+        setShowPostMenu(false);
+        setSelectedPostId(null);
+    };
+
+    const handleDeletePost = async () => {
+        if (!selectedPostId) return;
+        
+        Alert.alert(
+            'Excluir publicação',
+            'Tem certeza que deseja excluir esta publicação? Esta ação não pode ser desfeita.',
+            [
+                { text: 'Cancelar', style: 'cancel', onPress: hidePostMenu },
+                { 
+                    text: 'Excluir', 
+                    style: 'destructive', 
+                    onPress: async () => {
+                        await deletePost();
+                    } 
+                }
+            ]
+        );
+    };
+
+    const deletePost = async () => {
+        if (!selectedPostId || deleting) return;
+        
+        setDeleting(true);
+        hidePostMenu();
+        
+        try {
+            const commentsQuery = query(
+                collection(db, 'comments'),
+                where('postId', '==', selectedPostId)
+            );
+            
+            const commentsSnapshot = await getDocs(commentsQuery);
+            
+            const deleteCommentPromises = commentsSnapshot.docs.map(commentDoc => 
+                deleteDoc(doc(db, 'comments', commentDoc.id))
+            );
+            
+            await Promise.all(deleteCommentPromises);
+            
+            await deleteDoc(doc(db, 'posts', selectedPostId));
+
+            setPosts(prevPosts => prevPosts.filter(post => post.id !== selectedPostId));
+            
+        } catch (error) {
+            console.error('Erro ao excluir post:', error);
+            Alert.alert('Erro', 'Não foi possível excluir a publicação. Tente novamente.');
+        } finally {
+            setDeleting(false);
+            setSelectedPostId(null);
+        }
+    };
+
     const filteredPosts = posts.filter(post =>
         post.description?.toLowerCase().includes(search.toLowerCase()) ||
         post.userName?.toLowerCase().includes(search.toLowerCase())
     );
 
-    // Renderiza cada post
     const renderPost = ({ item }) => {
         const isLiked = item.likedBy?.includes(currentUser?.uid) || false;
         
@@ -241,6 +296,16 @@ export default function HomeScreen({ navigation }) {
                             <Text style={styles.postDate}>{formatDate(item.createdAt)}</Text>
                         </View>
                     </TouchableOpacity>
+                    
+                    {/* Adicionando o botão de três pontos para posts do usuário atual */}
+                    {item.isOwnPost && (
+                        <TouchableOpacity 
+                            style={styles.postOptionsButton}
+                            onPress={() => showPostOptions(item.id)}
+                        >
+                            <Ionicons name="ellipsis-horizontal" size={24} color="#636e72" />
+                        </TouchableOpacity>
+                    )}
                 </View>
 
                 {/* Imagem do post */}
@@ -381,6 +446,45 @@ export default function HomeScreen({ navigation }) {
                 }
                 showsVerticalScrollIndicator={false}
             />
+
+            {/* Modal para opções do post */}
+            <Modal
+                visible={showPostMenu}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={hidePostMenu}
+            >
+                <TouchableWithoutFeedback onPress={hidePostMenu}>
+                    <View style={styles.modalOverlay}>
+                        <View style={styles.modalContent}>
+                            <Text style={styles.modalTitle}>Opções da publicação</Text>
+                            
+                            <TouchableOpacity
+                                style={[styles.modalOption, styles.modalOptionDanger]}
+                                onPress={handleDeletePost}
+                            >
+                                <Ionicons name="trash-outline" size={24} color="#e74c3c" />
+                                <Text style={styles.modalOptionTextDanger}>Excluir publicação</Text>
+                            </TouchableOpacity>
+                            
+                            <TouchableOpacity
+                                style={styles.modalCancelButton}
+                                onPress={hidePostMenu}
+                            >
+                                <Text style={styles.modalCancelText}>Cancelar</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </TouchableWithoutFeedback>
+            </Modal>
+
+            {/* Overlay de carregamento durante exclusão */}
+            {deleting && (
+                <View style={styles.loadingOverlay}>
+                    <ActivityIndicator size="large" color="#fff" />
+                    <Text style={styles.loadingOverlayText}>Excluindo publicação...</Text>
+                </View>
+            )}
         </SafeAreaView>
     );
 }
@@ -454,6 +558,9 @@ const styles = StyleSheet.create({
         overflow: 'hidden',
     },
     postHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
         paddingHorizontal: 16,
         paddingVertical: 12,
         borderBottomWidth: 1,
@@ -462,6 +569,7 @@ const styles = StyleSheet.create({
     userInfo: {
         flexDirection: 'row',
         alignItems: 'center',
+        flex: 1,
     },
     userAvatar: {
         width: 40,
@@ -499,6 +607,9 @@ const styles = StyleSheet.create({
     postDate: {
         fontSize: 12,
         color: '#636e72',
+    },
+    postOptionsButton: {
+        padding: 8,
     },
     postImage: {
         width: '100%',
@@ -581,11 +692,10 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         marginTop: 5,
     },
-    // Campo de busca com design mais integrado
     searchContainer: {
         paddingHorizontal: 16,
         marginTop: 80,
-        marginBottom: 8, // Reduzido para aproximar o campo de busca dos posts
+        marginBottom: 8,
     },
     searchBox: {
         flexDirection: 'row',
@@ -608,5 +718,87 @@ const styles = StyleSheet.create({
         color: '#2d3436',
         backgroundColor: 'transparent',
         borderWidth: 0,
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+    },
+    modalContent: {
+        backgroundColor: '#fff',
+        borderRadius: 20,
+        padding: 20,
+        width: '100%',
+        maxWidth: 320,
+        alignItems: 'center',
+        elevation: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 5 },
+        shadowOpacity: 0.25,
+        shadowRadius: 10,
+    },
+    modalTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#2d3436',
+        marginBottom: 16,
+        textAlign: 'center',
+    },
+    modalOption: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#f8f9fa',
+        paddingVertical: 14,
+        paddingHorizontal: 20,
+        borderRadius: 12,
+        marginBottom: 12,
+        width: '100%',
+        borderWidth: 1,
+        borderColor: '#e0e0e0',
+    },
+    modalOptionDanger: {
+        backgroundColor: '#fff',
+        borderColor: '#e74c3c',
+    },
+    modalOptionText: {
+        fontSize: 16,
+        color: '#2d3436',
+        marginLeft: 12,
+        fontWeight: '500',
+    },
+    modalOptionTextDanger: {
+        fontSize: 16,
+        color: '#e74c3c',
+        marginLeft: 12,
+        fontWeight: '500',
+    },
+    modalCancelButton: {
+        marginTop: 5,
+        paddingVertical: 12,
+        paddingHorizontal: 20,
+    },
+    modalCancelText: {
+        fontSize: 16,
+        color: '#636e72',
+        fontWeight: '500',
+    },
+    loadingOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 2000,
+    },
+    loadingOverlayText: {
+        color: '#fff',
+        fontSize: 16,
+        marginTop: 12,
+        fontWeight: '500',
     },
 });

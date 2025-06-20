@@ -9,10 +9,12 @@ import {
     SafeAreaView,
     ActivityIndicator,
     Alert,
-    Dimensions
+    Dimensions,
+    Modal,
+    TouchableWithoutFeedback
 } from 'react-native';
 import { db, auth } from '../firebase';
-import { doc, getDoc, collection, query, where, orderBy, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, orderBy, getDocs, updateDoc, arrayUnion, arrayRemove, deleteDoc } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function ProfileScreen({ route, navigation }) {
@@ -21,6 +23,9 @@ export default function ProfileScreen({ route, navigation }) {
     const [posts, setPosts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [postsLoading, setPostsLoading] = useState(true);
+    const [selectedPostId, setSelectedPostId] = useState(null);
+    const [showPostMenu, setShowPostMenu] = useState(false);
+    const [deleting, setDeleting] = useState(false);
     const currentUser = auth.currentUser;
     const isOwnProfile = currentUser?.uid === userId;
 
@@ -69,7 +74,11 @@ export default function ProfileScreen({ route, navigation }) {
             const snapshot = await getDocs(postsQuery);
             let userPosts = snapshot.docs.map(doc => ({
                 id: doc.id,
-                ...doc.data()
+                ...doc.data(),
+                likedBy: doc.data().likedBy || [],
+                likes: doc.data().likes || 0,
+                comments: doc.data().comments || 0,
+                isOwnPost: doc.data().userId === currentUser?.uid
             }));
             
             userPosts = userPosts.sort((a, b) => {
@@ -85,6 +94,121 @@ export default function ProfileScreen({ route, navigation }) {
             setPostsLoading(false);
         }
     };
+    
+    const toggleLike = async (postId) => {
+        if (!currentUser) {
+            Alert.alert('Erro', 'Você precisa estar logado para curtir posts');
+            return;
+        }
+
+        try {
+            const postRef = doc(db, 'posts', postId);
+            const postDoc = await getDoc(postRef);
+            
+            if (!postDoc.exists()) {
+                return;
+            }
+
+            const postData = postDoc.data();
+            const likedBy = postData.likedBy || [];
+            const isLiked = likedBy.includes(currentUser.uid); 
+
+            setPosts(prevPosts => 
+                prevPosts.map(post => {
+                    if (post.id === postId) {
+                        const newLikedBy = isLiked 
+                            ? post.likedBy.filter(id => id !== currentUser.uid)
+                            : [...post.likedBy, currentUser.uid];
+                        
+                        return {
+                            ...post,
+                            likedBy: newLikedBy,
+                            likes: newLikedBy.length
+                        };
+                    }
+                    return post;
+                })
+            );            
+            
+            if (isLiked) {                
+                await updateDoc(postRef, {
+                    likedBy: arrayRemove(currentUser.uid),
+                    likes: Math.max(0, (postData.likes || 0) - 1)
+                });
+            } else {                
+                await updateDoc(postRef, {
+                    likedBy: arrayUnion(currentUser.uid),
+                    likes: (postData.likes || 0) + 1
+                });
+            }
+
+        } catch (error) {
+            console.error('Erro ao curtir post:', error);                 
+            loadUserPosts(); 
+        }
+    };
+
+    const showPostOptions = (postId) => {
+        setSelectedPostId(postId);
+        setShowPostMenu(true);
+    };
+
+    const hidePostMenu = () => {
+        setShowPostMenu(false);
+        setSelectedPostId(null);
+    };
+
+    const handleDeletePost = async () => {
+        if (!selectedPostId) return;
+        
+        Alert.alert(
+            'Excluir publicação',
+            'Tem certeza que deseja excluir esta publicação? Esta ação não pode ser desfeita.',
+            [
+                { text: 'Cancelar', style: 'cancel', onPress: hidePostMenu },
+                { 
+                    text: 'Excluir', 
+                    style: 'destructive', 
+                    onPress: async () => {
+                        await deletePost();
+                    } 
+                }
+            ]
+        );
+    };
+
+    const deletePost = async () => {
+        if (!selectedPostId || deleting) return;
+        
+        setDeleting(true);
+        hidePostMenu();
+        
+        try {
+            const commentsQuery = query(
+                collection(db, 'comments'),
+                where('postId', '==', selectedPostId)
+            );
+            
+            const commentsSnapshot = await getDocs(commentsQuery);
+            
+            const deleteCommentPromises = commentsSnapshot.docs.map(commentDoc => 
+                deleteDoc(doc(db, 'comments', commentDoc.id))
+            );
+            
+            await Promise.all(deleteCommentPromises);
+
+            await deleteDoc(doc(db, 'posts', selectedPostId));
+
+            setPosts(prevPosts => prevPosts.filter(post => post.id !== selectedPostId));
+            
+        } catch (error) {
+            console.error('Erro ao excluir post:', error);
+            Alert.alert('Erro', 'Não foi possível excluir a publicação. Tente novamente.');
+        } finally {
+            setDeleting(false);
+            setSelectedPostId(null);
+        }
+    };
 
     const formatDate = (timestamp) => {
         if (!timestamp) return '';
@@ -96,36 +220,77 @@ export default function ProfileScreen({ route, navigation }) {
         }
     };
 
-    const renderPost = ({ item }) => (
-        <View style={styles.postContainer}>
-            {item.imageUrl && (
-                <Image
-                    source={{ uri: item.imageUrl }}
-                    style={styles.postImage}
-                    resizeMode="cover"
-                />
-            )}
-            
-            <View style={styles.postContent}>
-                <Text style={styles.postDescription}>{item.description || ''}</Text>
-                
-                {item.location && (
-                    <View style={styles.locationContainer}>
-                        <Ionicons name="location-outline" size={14} color="#636e72" />
-                        <Text style={styles.locationText}>{item.location}</Text>
+    const renderPost = ({ item }) => {
+        const isLiked = item.likedBy?.includes(currentUser?.uid) || false;
+        
+        return (
+            <View style={styles.postContainer}>
+                {/* Header do post com opções para próprios posts */}
+                {isOwnProfile && (
+                    <View style={styles.postHeader}>
+                        <View style={styles.postHeaderDate}>
+                            <Text style={styles.postDate}>{formatDate(item.createdAt)}</Text>
+                        </View>
+                        
+                        {/* Botão de três pontos para opções */}
+                        <TouchableOpacity 
+                            style={styles.postOptionsButton}
+                            onPress={() => showPostOptions(item.id)}
+                        >
+                            <Ionicons name="ellipsis-horizontal" size={24} color="#636e72" />
+                        </TouchableOpacity>
                     </View>
                 )}
                 
+                {item.imageUrl && (
+                    <Image
+                        source={{ uri: item.imageUrl }}
+                        style={styles.postImage}
+                        resizeMode="cover"
+                    />
+                )}
+                
+                <View style={styles.postContent}>
+                    <Text style={styles.postDescription}>{item.description || ''}</Text>
+                    
+                    {item.location && (
+                        <View style={styles.locationContainer}>
+                            <Ionicons name="location-outline" size={14} color="#636e72" />
+                            <Text style={styles.locationText}>{item.location}</Text>
+                        </View>
+                    )}
+                </View>
+                
+                {/* Post Footer with Like and Comment buttons - matching HomeScreen */}
                 <View style={styles.postFooter}>
-                    <View style={styles.likeContainer}>
-                        <Ionicons name="heart" size={16} color="#e74c3c" />
-                        <Text style={styles.likeCount}>{item.likes || 0}</Text>
-                    </View>
-                    <Text style={styles.postDate}>{formatDate(item.createdAt)}</Text>
+                    <TouchableOpacity 
+                        style={styles.likeButton}
+                        onPress={() => toggleLike(item.id)}
+                    >
+                        <Ionicons 
+                            name={isLiked ? "heart" : "heart-outline"} 
+                            size={24} 
+                            color={isLiked ? "#e74c3c" : "#636e72"} 
+                        />
+                        <Text style={[
+                            styles.likeCount,
+                            isLiked && styles.likedText
+                        ]}>
+                            {item.likes || 0}
+                        </Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                        style={styles.commentButton}
+                        onPress={() => navigation.navigate('CommentsScreen', { postId: item.id })}
+                    >
+                        <Ionicons name="chatbubble-outline" size={24} color="#636e72" />
+                        <Text style={styles.commentCount}>{item.comments || 0}</Text>
+                    </TouchableOpacity>
                 </View>
             </View>
-        </View>
-    );
+        );
+    };
 
     const renderHeader = () => (
         <View style={styles.profileHeader}>
@@ -242,6 +407,45 @@ export default function ProfileScreen({ route, navigation }) {
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={{ paddingBottom: 30 }}
             />
+            
+            {/* Modal para opções do post */}
+            <Modal
+                visible={showPostMenu}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={hidePostMenu}
+            >
+                <TouchableWithoutFeedback onPress={hidePostMenu}>
+                    <View style={styles.modalOverlay}>
+                        <View style={styles.modalContent}>
+                            <Text style={styles.modalTitle}>Opções da publicação</Text>
+                            
+                            <TouchableOpacity
+                                style={[styles.modalOption, styles.modalOptionDanger]}
+                                onPress={handleDeletePost}
+                            >
+                                <Ionicons name="trash-outline" size={24} color="#e74c3c" />
+                                <Text style={styles.modalOptionTextDanger}>Excluir publicação</Text>
+                            </TouchableOpacity>
+                            
+                            <TouchableOpacity
+                                style={styles.modalCancelButton}
+                                onPress={hidePostMenu}
+                            >
+                                <Text style={styles.modalCancelText}>Cancelar</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </TouchableWithoutFeedback>
+            </Modal>
+
+            {/* Overlay de carregamento durante exclusão */}
+            {deleting && (
+                <View style={styles.loadingOverlay}>
+                    <ActivityIndicator size="large" color="#fff" />
+                    <Text style={styles.loadingOverlayText}>Excluindo publicação...</Text>
+                </View>
+            )}
         </SafeAreaView>
     );
 }
@@ -381,6 +585,25 @@ const styles = StyleSheet.create({
         shadowRadius: 4,
         overflow: 'hidden',
     },
+    postHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f0f0f0',
+    },
+    postHeaderDate: {
+        flex: 1,
+    },
+    postOptionsButton: {
+        padding: 8,
+    },
+    postDate: {
+        fontSize: 14,
+        color: '#636e72',
+    },
     postImage: {
         width: '100%',
         height: windowWidth > 400 ? 250 : 200,
@@ -406,12 +629,18 @@ const styles = StyleSheet.create({
     },
     postFooter: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderTopWidth: 1,
+        borderTopColor: '#f0f0f0',
     },
-    likeContainer: {
+    likeButton: {
         flexDirection: 'row',
         alignItems: 'center',
+        marginRight: 20,
+        paddingVertical: 5,
+        paddingHorizontal: 8,
+        borderRadius: 20,
     },
     likeCount: {
         fontSize: 14,
@@ -419,9 +648,21 @@ const styles = StyleSheet.create({
         marginLeft: 4,
         fontWeight: '600',
     },
-    postDate: {
-        fontSize: 12,
+    likedText: {
+        color: '#e74c3c',
+        fontWeight: 'bold',
+    },
+    commentButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 5,
+        paddingHorizontal: 8,
+    },
+    commentCount: {
+        fontSize: 14,
         color: '#636e72',
+        marginLeft: 4,
+        fontWeight: '600',
     },
     postsLoadingContainer: {
         alignItems: 'center',
@@ -438,5 +679,81 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         marginTop: 10,
         lineHeight: 22,
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+    },
+    modalContent: {
+        backgroundColor: '#fff',
+        borderRadius: 20,
+        padding: 20,
+        width: '100%',
+        maxWidth: 320,
+        alignItems: 'center',
+        elevation: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 5 },
+        shadowOpacity: 0.25,
+        shadowRadius: 10,
+    },
+    modalTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#2d3436',
+        marginBottom: 16,
+        textAlign: 'center',
+    },
+    modalOption: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#f8f9fa',
+        paddingVertical: 14,
+        paddingHorizontal: 20,
+        borderRadius: 12,
+        marginBottom: 12,
+        width: '100%',
+        borderWidth: 1,
+        borderColor: '#e0e0e0',
+    },
+    modalOptionDanger: {
+        backgroundColor: '#fff',
+        borderColor: '#e74c3c',
+    },
+    modalOptionTextDanger: {
+        fontSize: 16,
+        color: '#e74c3c',
+        marginLeft: 12,
+        fontWeight: '500',
+    },
+    modalCancelButton: {
+        marginTop: 5,
+        paddingVertical: 12,
+        paddingHorizontal: 20,
+    },
+    modalCancelText: {
+        fontSize: 16,
+        color: '#636e72',
+        fontWeight: '500',
+    },
+    loadingOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 2000,
+    },
+    loadingOverlayText: {
+        color: '#fff',
+        fontSize: 16,
+        marginTop: 12,
+        fontWeight: '500',
     },
 });
