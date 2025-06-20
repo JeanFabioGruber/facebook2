@@ -11,18 +11,25 @@ import {
     Alert,
     RefreshControl,
     Dimensions,
-    Animated
+    Animated,
+    TextInput // Adicionado para busca
 } from 'react-native';
 import { db, auth } from '../firebase';
 import { collection, query, orderBy, getDocs, doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function HomeScreen({ navigation }) {
+    // Estado dos posts
     const [posts, setPosts] = useState([]);
+    // Estado de loading
     const [loading, setLoading] = useState(true);
+    // Estado de refresh
     const [refreshing, setRefreshing] = useState(false);
+    // Estado do campo de busca
+    const [search, setSearch] = useState('');
     const currentUser = auth.currentUser;    
     
+    // Animação do header
     const scrollY = useRef(new Animated.Value(0)).current;
     const headerTranslateY = useRef(new Animated.Value(0)).current;
     const lastScrollY = useRef(0);
@@ -31,6 +38,7 @@ export default function HomeScreen({ navigation }) {
         loadPosts();
     }, []);
 
+    // Formata a data do post
     const formatDate = (timestamp) => {
     if (!timestamp) return '';
     try {
@@ -47,6 +55,7 @@ export default function HomeScreen({ navigation }) {
     }
 };
 
+    // Carrega os posts do Firestore
     const loadPosts = async () => {
         setLoading(true);
         try {
@@ -61,6 +70,7 @@ export default function HomeScreen({ navigation }) {
                 ...doc.data()
             }));
 
+            // Busca dados do usuário para cada post
             const postsWithUserData = await Promise.all(
                 postsData.map(async (post) => {
                     try {
@@ -72,7 +82,8 @@ export default function HomeScreen({ navigation }) {
                                 userName: userData.nome || 'Usuário',
                                 userProfileImage: userData.profileImage || null,                               
                                 likedBy: post.likedBy || [],
-                                likes: post.likes || 0
+                                likes: post.likes || 0,
+                                comments: post.comments || 0 // Garante que o campo comments seja exibido
                             };
                         }
                         return {
@@ -80,7 +91,8 @@ export default function HomeScreen({ navigation }) {
                             userName: 'Usuário',
                             userProfileImage: null,
                             likedBy: post.likedBy || [],
-                            likes: post.likes || 0
+                            likes: post.likes || 0,
+                            comments: post.comments || 0
                         };
                     } catch (error) {
                         console.error('Erro ao buscar dados do usuário:', error);
@@ -89,7 +101,8 @@ export default function HomeScreen({ navigation }) {
                             userName: 'Usuário',
                             userProfileImage: null,
                             likedBy: post.likedBy || [],
-                            likes: post.likes || 0
+                            likes: post.likes || 0,
+                            comments: post.comments || 0
                         };
                     }
                 })
@@ -104,6 +117,7 @@ export default function HomeScreen({ navigation }) {
         }
     };
 
+    // Função para curtir/descurtir post
     const toggleLike = async (postId) => {
         if (!currentUser) {
             Alert.alert('Erro', 'Você precisa estar logado para curtir posts');
@@ -157,12 +171,14 @@ export default function HomeScreen({ navigation }) {
         }
     };
 
+    // Atualiza lista ao puxar para baixo
     const onRefresh = async () => {
         setRefreshing(true);
         await loadPosts();
         setRefreshing(false);
     };
 
+    // Animação do header ao rolar
     const handleScroll = Animated.event(
         [{ nativeEvent: { contentOffset: { y: scrollY } } }],
         {
@@ -190,6 +206,13 @@ export default function HomeScreen({ navigation }) {
         }
     );
 
+    // Filtra posts conforme busca
+    const filteredPosts = posts.filter(post =>
+        post.description?.toLowerCase().includes(search.toLowerCase()) ||
+        post.userName?.toLowerCase().includes(search.toLowerCase())
+    );
+
+    // Renderiza cada post
     const renderPost = ({ item }) => {
         const isLiked = item.likedBy?.includes(currentUser?.uid) || false;
         
@@ -259,8 +282,8 @@ export default function HomeScreen({ navigation }) {
                             {item.likes || 0}
                         </Text>
                     </TouchableOpacity>
-                    
-                    <TouchableOpacity style={styles.commentButton}>
+                    {/* Botão de comentário agora navega para CommentsScreen */}
+                    <TouchableOpacity style={styles.commentButton} onPress={() => navigation.navigate('CommentsScreen', { postId: item.id })}>
                         <Ionicons name="chatbubble-outline" size={24} color="#636e72" />
                         <Text style={styles.commentCount}>{item.comments || 0}</Text>
                     </TouchableOpacity>
@@ -272,7 +295,7 @@ export default function HomeScreen({ navigation }) {
     if (loading && posts.length === 0) {
         return (
             <SafeAreaView style={styles.container}>
-                <Animated.View style={[styles.header, { transform: [{ translateY: headerTranslateY }] }]}>
+                <Animated.View style={[styles.header, { transform: [{ translateY: headerTranslateY }] }]}> 
                     <Text style={styles.headerTitle}>Feed</Text>
                     <View style={styles.headerButtons}>
                         <TouchableOpacity 
@@ -289,7 +312,7 @@ export default function HomeScreen({ navigation }) {
                         </TouchableOpacity>
                     </View>
                 </Animated.View>
-                <View style={[styles.loadingContainer, { paddingTop: 80 }]}>
+                <View style={[styles.loadingContainer, { paddingTop: 80 }]}> 
                     <ActivityIndicator size="large" color="#1abc9c" />
                     <Text style={styles.loadingText}>Carregando posts...</Text>
                 </View>
@@ -299,7 +322,8 @@ export default function HomeScreen({ navigation }) {
 
     return (
         <SafeAreaView style={styles.container}>
-            <Animated.View style={[styles.header, { transform: [{ translateY: headerTranslateY }] }]}>
+            {/* Header animado */}
+            <Animated.View style={[styles.header, { transform: [{ translateY: headerTranslateY }] }]}> 
                 <Text style={styles.headerTitle}>Feed</Text>
                 <View style={styles.headerButtons}>
                     <TouchableOpacity 
@@ -316,15 +340,28 @@ export default function HomeScreen({ navigation }) {
                     </TouchableOpacity>
                 </View>
             </Animated.View>
+            {/* Campo de busca com design mais integrado */}
+            <View style={styles.searchContainer}>
+                <View style={styles.searchBox}>
+                    <Ionicons name="search" size={20} color="#b2bec3" style={{ marginLeft: 10, marginRight: 6 }} />
+                    <TextInput
+                        placeholder="Buscar post..."
+                        value={search}
+                        onChangeText={setSearch}
+                        style={styles.searchInput}
+                        placeholderTextColor="#b2bec3"
+                    />
+                </View>
+            </View>
+            {/* Lista de posts filtrados */}
             <FlatList
-                data={posts}
+                data={filteredPosts}
                 renderItem={renderPost}
                 keyExtractor={item => item.id}
                 onScroll={handleScroll}
                 scrollEventThrottle={16}
                 contentContainerStyle={[
-                    posts.length === 0 ? styles.emptyContentContainer : styles.contentContainer,
-                    { paddingTop: 80 }
+                    filteredPosts.length === 0 ? styles.emptyContentContainer : styles.contentContainer,
                 ]}
                 refreshControl={
                     <RefreshControl
@@ -543,5 +580,33 @@ const styles = StyleSheet.create({
         color: '#b2bec3',
         textAlign: 'center',
         marginTop: 5,
+    },
+    // Campo de busca com design mais integrado
+    searchContainer: {
+        paddingHorizontal: 16,
+        marginTop: 80,
+        marginBottom: 8, // Reduzido para aproximar o campo de busca dos posts
+    },
+    searchBox: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#fff',
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: '#e0e0e0',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.04,
+        shadowRadius: 2,
+        elevation: 1,
+    },
+    searchInput: {
+        flex: 1,
+        paddingHorizontal: 0,
+        paddingVertical: 8,
+        fontSize: 16,
+        color: '#2d3436',
+        backgroundColor: 'transparent',
+        borderWidth: 0,
     },
 });
