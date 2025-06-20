@@ -20,15 +20,19 @@ import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { getStorage, ref, uploadString, getDownloadURL, uploadBytes } from 'firebase/storage';
 
 export default function AddPostScreen({ navigation }) {
-    const [image, setImage] = useState(null);
+    const [images, setImages] = useState([]); // Troca image por images (array)
     const [description, setDescription] = useState('');
     const [location, setLocation] = useState('');
     const [loading, setLoading] = useState(false);
     const [locationLoading, setLocationLoading] = useState(false);
     const [showImageModal, setShowImageModal] = useState(true);
     const [imageSelected, setImageSelected] = useState(false); 
+    const [tags, setTags] = useState([]); // Novo estado para tags
+    const [tagInput, setTagInput] = useState(''); // Estado para input de tag
+    const [imageLoading, setImageLoading] = useState(false); // Novo estado para loading de imagem
     const currentUser = auth.currentUser;
 
     useEffect(() => {
@@ -59,34 +63,43 @@ export default function AddPostScreen({ navigation }) {
         }
     };
 
+    // Detecta dinamicamente o tipo de media para máxima compatibilidade
+    const getImagePickerMediaType = () => {
+        if (ImagePicker.MediaType && ImagePicker.MediaType.IMAGE) {
+            return [ImagePicker.MediaType.IMAGE];
+        }
+        if (ImagePicker.MediaTypeOptions && ImagePicker.MediaTypeOptions.Images) {
+            return ImagePicker.MediaTypeOptions.Images;
+        }
+        // Fallback para string
+        return 'Images';
+    };
+
     const takePhoto = async () => {
         try {
+            setImageLoading(true);
             setShowImageModal(false);
             const result = await ImagePicker.launchCameraAsync({
-                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                mediaTypes: getImagePickerMediaType(),
                 allowsEditing: true,
                 aspect: [4, 3],
                 quality: 0.7,
                 base64: true,
             });
-
+            setImageLoading(false);
             if (!result.canceled) {
-                const base64Image = `data:image/jpeg;base64,${result.assets[0].base64}`;
-                if (base64Image.length > 1000000) {
-                    Alert.alert(
-                        'Imagem muito grande',
-                        'Por favor, tire uma foto com qualidade menor ou escolha uma imagem menor.'
-                    );
-                    setShowImageModal(true);
-                    return;
+                const asset = result.assets[0];
+                let base64Image = asset.base64;
+                if (!base64Image.startsWith('data:image')) {
+                    base64Image = `data:image/jpeg;base64,${base64Image}`;
                 }
-                
-                setImage(base64Image);
+                setImages(prev => [...prev, base64Image]);
                 setImageSelected(true);
             } else {
                 navigation.goBack();
             }
         } catch (error) {
+            setImageLoading(false);
             console.error('Erro ao tirar foto:', error);
             Alert.alert('Erro', 'Não foi possível tirar a foto. Tente novamente.');
             navigation.goBack();
@@ -95,32 +108,32 @@ export default function AddPostScreen({ navigation }) {
 
     const pickImage = async () => {
         try {
+            setImageLoading(true);
             setShowImageModal(false);
             const result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ImagePicker.MediaTypeOptions.Images,
-                allowsEditing: true,
+                mediaTypes: getImagePickerMediaType(),
+                allowsMultipleSelection: true,
                 aspect: [4, 3],
                 quality: 0.7,
                 base64: true,
+                selectionLimit: 0 // 0 = sem limite
             });
-
+            setImageLoading(false);
             if (!result.canceled) {
-                const base64Image = `data:image/jpeg;base64,${result.assets[0].base64}`;               
-                if (base64Image.length > 1000000) { 
-                    Alert.alert(
-                        'Imagem muito grande',
-                        'Por favor, escolha uma imagem menor.'
-                    );
-                    setShowImageModal(true);
-                    return;
-                }
-                
-                setImage(base64Image);
+                const newImages = result.assets.map(asset => {
+                    let base64Image = asset.base64;
+                    if (!base64Image.startsWith('data:image')) {
+                        base64Image = `data:image/jpeg;base64,${base64Image}`;
+                    }
+                    return base64Image;
+                });
+                setImages(prev => [...prev, ...newImages]);
                 setImageSelected(true);
-            } else {               
+            } else {
                 navigation.goBack();
             }
         } catch (error) {
+            setImageLoading(false);
             console.error('Erro ao escolher imagem:', error);
             Alert.alert('Erro', 'Não foi possível escolher a imagem. Tente novamente.');
             navigation.goBack();
@@ -188,47 +201,86 @@ export default function AddPostScreen({ navigation }) {
         setShowImageModal(true);
     };
 
-    const removeImage = () => {
-        Alert.alert(
-            'Remover Imagem',
-            'Deseja remover a imagem selecionada?',
-            [
-                { text: 'Cancelar', style: 'cancel' },
-                { text: 'Remover', onPress: () => setImage(null) },
-            ]
-        );
+    const removeImage = (index) => {
+        setImages(prev => prev.filter((_, i) => i !== index));
+        if (images.length === 1) setImageSelected(false);
+    };
+
+    const addTag = () => {
+        const newTag = tagInput.trim();
+        if (newTag && !tags.includes(newTag)) {
+            setTags([...tags, newTag]);
+        }
+        setTagInput('');
+    };
+
+    const removeTag = (tagToRemove) => {
+        setTags(tags.filter(tag => tag !== tagToRemove));
+    };
+
+    const uploadImagesAndGetUrls = async (images, userId) => {
+        const storage = getStorage();
+        const urls = [];
+        for (let i = 0; i < images.length; i++) {
+            let image = images[i];
+            // Garante formato data_url
+            if (!image.startsWith('data:image')) {
+                image = `data:image/jpeg;base64,${image}`;
+            }
+            const imageRef = ref(storage, `posts/${userId}_${Date.now()}_${i}.jpg`);
+            try {
+                await uploadString(imageRef, image, 'data_url');
+            } catch (err) {
+                // Fallback: tenta converter para blob e usar uploadBytes
+                try {
+                    const base64 = image.replace(/^data:image\/(png|jpeg|jpg);base64,/, '');
+                    const byteCharacters = atob(base64);
+                    const byteNumbers = new Array(byteCharacters.length);
+                    for (let j = 0; j < byteCharacters.length; j++) {
+                        byteNumbers[j] = byteCharacters.charCodeAt(j);
+                    }
+                    const byteArray = new Uint8Array(byteNumbers);
+                    await uploadBytes(imageRef, byteArray, { contentType: 'image/jpeg' });
+                } catch (err2) {
+                    throw new Error('Falha ao fazer upload da imagem.');
+                }
+            }
+            const url = await getDownloadURL(imageRef);
+            urls.push(url);
+        }
+        return urls;
     };
 
     const createPost = async () => {
-        if (!image && !description.trim()) {
+        if (images.length === 0 && !description.trim()) {
             Alert.alert('Erro', 'Adicione uma imagem ou descrição para criar a publicação.');
             return;
         }
-
         if (!currentUser) {
             Alert.alert('Erro', 'Você precisa estar logado para criar uma publicação.');
             return;
         }
-
         setLoading(true);
         try {
+            let imageUrls = [];
+            if (images.length > 0) {
+                imageUrls = await uploadImagesAndGetUrls(images, currentUser.uid);
+            }
             const postData = {
                 userId: currentUser.uid,
                 description: description.trim(),
-                imageUrl: image,
+                imageUrls: imageUrls,
                 location: location.trim() || null,
+                tags: tags,
                 createdAt: serverTimestamp(),
                 likes: 0,
                 comments: 0,
             };
-
             await addDoc(collection(db, 'posts'), postData);            
-          
             navigation.navigate('Home', { 
                 refresh: true,
                 newPost: true
             });
-            
         } catch (error) {
             console.error('Erro ao criar post:', error);
             Alert.alert('Erro', 'Não foi possível criar a publicação. Tente novamente.');
@@ -238,7 +290,7 @@ export default function AddPostScreen({ navigation }) {
     };
 
     return (
-        <SafeAreaView style={styles.container}>
+        <SafeAreaView style={[styles.container, { paddingTop: Platform.OS === 'android' ? 30 : 0 }]}>
             {/* Modal de seleção de imagem */}
             <Modal
                 visible={showImageModal}
@@ -318,28 +370,32 @@ export default function AddPostScreen({ navigation }) {
 
                     <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
                         {/* Área da imagem */}
-                        {image && (
+                        {images.length > 0 && (
                             <View style={styles.imageSection}>
-                                <View style={styles.imageContainer}>
-                                    <Image source={{ uri: image }} style={styles.selectedImage} />
-                                    <TouchableOpacity 
-                                        style={styles.changeImageButton}
-                                        onPress={changeImage}
-                                    >
-                                        <Ionicons name="pencil" size={20} color="#fff" />
-                                    </TouchableOpacity>
-                                    <TouchableOpacity 
-                                        style={styles.removeImageButton}
-                                        onPress={removeImage}
-                                    >
-                                        <Ionicons name="close-circle" size={30} color="#e74c3c" />
-                                    </TouchableOpacity>
-                                </View>
+                                <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false}>
+                                    {images.map((img, idx) => (
+                                        <View key={idx} style={styles.imageContainer}>
+                                            <Image source={{ uri: img }} style={styles.selectedImage} />
+                                            <TouchableOpacity 
+                                                style={styles.changeImageButton}
+                                                onPress={changeImage}
+                                            >
+                                                <Ionicons name="pencil" size={20} color="#fff" />
+                                            </TouchableOpacity>
+                                            <TouchableOpacity 
+                                                style={styles.removeImageButton}
+                                                onPress={() => removeImage(idx)}
+                                            >
+                                                <Ionicons name="close-circle" size={30} color="#e74c3c" />
+                                            </TouchableOpacity>
+                                        </View>
+                                    ))}
+                                </ScrollView>
                             </View>
                         )}
 
                         {/* Botão para adicionar foto se não tiver */}
-                        {!image && (
+                        {images.length === 0 && (
                             <View style={styles.imageSection}>
                                 <TouchableOpacity 
                                     style={styles.addPhotoButton}
@@ -393,6 +449,34 @@ export default function AddPostScreen({ navigation }) {
                                 maxLength={100}
                             />
                         </View>
+
+                        {/* Campo de tags */}
+                        <View style={styles.inputSection}>
+                            <Text style={styles.inputLabel}>Tags (ex: esporte, futebol, corrida)</Text>
+                            <View style={styles.tagsInputRow}>
+                                <TextInput
+                                    style={styles.tagInput}
+                                    placeholder="Adicionar tag"
+                                    value={tagInput}
+                                    onChangeText={setTagInput}
+                                    onSubmitEditing={addTag}
+                                    maxLength={20}
+                                />
+                                <TouchableOpacity style={styles.addTagButton} onPress={addTag}>
+                                    <Ionicons name="add" size={20} color="#fff" />
+                                </TouchableOpacity>
+                            </View>
+                            <View style={styles.tagsContainer}>
+                                {tags.map(tag => (
+                                    <View key={tag} style={styles.tag}>
+                                        <Text style={styles.tagText}>#{tag}</Text>
+                                        <TouchableOpacity onPress={() => removeTag(tag)}>
+                                            <Ionicons name="close-circle" size={18} color="#e74c3c" style={{ marginLeft: 2 }} />
+                                        </TouchableOpacity>
+                                    </View>
+                                ))}
+                            </View>
+                        </View>
                     </ScrollView>
 
                     {/* Loading overlay */}
@@ -400,6 +484,14 @@ export default function AddPostScreen({ navigation }) {
                         <View style={styles.loadingOverlay}>
                             <ActivityIndicator size="large" color="#1abc9c" />
                             <Text style={styles.loadingText}>Criando publicação...</Text>
+                        </View>
+                    )}
+
+                    {/* Adiciona overlay de loading de imagem */}
+                    {imageLoading && (
+                        <View style={styles.imageLoadingOverlay}>
+                            <ActivityIndicator size="large" color="#fff" />
+                            <Text style={styles.imageLoadingText}>Carregando imagens...</Text>
                         </View>
                     )}
                 </KeyboardAvoidingView>
@@ -525,11 +617,13 @@ const styles = StyleSheet.create({
         position: 'relative',
         borderRadius: 12,
         overflow: 'hidden',
+        marginRight: 12,
     },
     selectedImage: {
-        width: '100%',
-        height: 250,
+        width: 180,
+        height: 180,
         borderRadius: 12,
+        marginRight: 12,
     },
     changeImageButton: {
         position: 'absolute',
@@ -612,6 +706,50 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.05,
         shadowRadius: 2,
     },
+    tagsInputRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
+    tagInput: {
+        flex: 1,
+        backgroundColor: '#fff',
+        borderRadius: 20,
+        paddingHorizontal: 15,
+        paddingVertical: 8,
+        fontSize: 15,
+        borderWidth: 1,
+        borderColor: '#e0e0e0',
+        marginRight: 8,
+    },
+    addTagButton: {
+        backgroundColor: '#1abc9c',
+        borderRadius: 20,
+        padding: 8,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    tagsContainer: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        marginTop: 4,
+    },
+    tag: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#e0f7fa',
+        borderRadius: 16,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        marginRight: 8,
+        marginBottom: 6,
+    },
+    tagText: {
+        color: '#16a085',
+        fontWeight: 'bold',
+        fontSize: 14,
+        marginRight: 2,
+    },
     loadingOverlay: {
         position: 'absolute',
         top: 0,
@@ -627,5 +765,22 @@ const styles = StyleSheet.create({
         fontSize: 16,
         color: '#fff',
         fontWeight: '500',
+    },
+    imageLoadingOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.7)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 3000,
+    },
+    imageLoadingText: {
+        color: '#fff',
+        fontSize: 18,
+        marginTop: 16,
+        fontWeight: 'bold',
     },
 });

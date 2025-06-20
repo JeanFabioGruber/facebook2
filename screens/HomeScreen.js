@@ -14,11 +14,28 @@ import {
     Animated,
     TextInput,
     Modal,
-    TouchableWithoutFeedback
+    TouchableWithoutFeedback,
+    ScrollView // Adicionado ScrollView
 } from 'react-native';
 import { db, auth } from '../firebase';
 import { collection, query, orderBy, getDocs, doc, getDoc, updateDoc, arrayUnion, arrayRemove, deleteDoc, where } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
+
+// Função utilitária para formatar datas
+function formatDate(timestamp) {
+    if (!timestamp) return '';
+    try {
+        const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+        const day = date.getDate().toString().padStart(2, '0');
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const year = date.getFullYear();
+        const hours = date.getHours().toString().padStart(2, '0');
+        const minutes = date.getMinutes().toString().padStart(2, '0');
+        return `${day}/${month}/${year} ${hours}:${minutes}`;
+    } catch (error) {
+        return '';
+    }
+}
 
 export default function HomeScreen({ navigation }) {
     const [posts, setPosts] = useState([]);
@@ -36,22 +53,6 @@ export default function HomeScreen({ navigation }) {
     useEffect(() => {
         loadPosts();
     }, []);
-
-    const formatDate = (timestamp) => {
-        if (!timestamp) return '';
-        try {
-            const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-            const day = date.getDate().toString().padStart(2, '0');
-            const month = (date.getMonth() + 1).toString().padStart(2, '0');
-            const year = date.getFullYear();
-            const hours = date.getHours().toString().padStart(2, '0');
-            const minutes = date.getMinutes().toString().padStart(2, '0');
-            
-            return `${day}/${month}/${year} ${hours}:${minutes}`;
-        } catch (error) {
-            return '';
-        }
-    };
 
     const loadPosts = async () => {
         setLoading(true);
@@ -421,7 +422,17 @@ export default function HomeScreen({ navigation }) {
             {/* Lista de posts filtrados */}
             <FlatList
                 data={filteredPosts}
-                renderItem={renderPost}
+                renderItem={({ item }) => (
+                    <PostItem
+                        item={item}
+                        currentUser={currentUser}
+                        navigation={navigation}
+                        onLike={toggleLike}
+                        onShowOptions={showPostOptions}
+                        formatDate={formatDate}
+                    />
+                )
+                }
                 keyExtractor={item => item.id}
                 onScroll={handleScroll}
                 scrollEventThrottle={16}
@@ -486,6 +497,128 @@ export default function HomeScreen({ navigation }) {
                 </View>
             )}
         </SafeAreaView>
+    );
+}
+
+function PostItem({ item, currentUser, navigation, onLike, onShowOptions, formatDate }) {
+    const isLiked = item.likedBy?.includes(currentUser?.uid) || false;
+    const [zoomVisible, setZoomVisible] = useState(false);
+    const [zoomImage, setZoomImage] = useState(null);
+
+    // Garante que images seja sempre um array de strings válidas
+    let images = [];
+    if (Array.isArray(item.imageUrls) && item.imageUrls.length > 0) {
+        images = item.imageUrls.filter(url => typeof url === 'string' && url.length > 0);
+    } else if (typeof item.imageUrl === 'string' && item.imageUrl.length > 0) {
+        images = [item.imageUrl];
+    }
+
+    return (
+        <View style={styles.postContainer}>
+            {/* Header do post com foto e nome do usuário */}
+            <View style={styles.postHeader}>
+                <TouchableOpacity 
+                    style={styles.userInfo}
+                    onPress={() => navigation.navigate('ProfileScreen', { userId: item.userId })}
+                >
+                    {item.userProfileImage ? (
+                        <Image 
+                            source={{ uri: item.userProfileImage }} 
+                            style={styles.userAvatar} 
+                        />
+                    ) : (
+                        <View style={styles.placeholderAvatar}>
+                            <Text style={styles.placeholderAvatarText}>
+                                {item.userName?.charAt(0)?.toUpperCase() || 'U'}
+                            </Text>
+                        </View>
+                    )}
+                    <View style={styles.userDetails}>
+                        <Text style={styles.userName}>{item.userName}</Text>
+                        <Text style={styles.postDate}>{formatDate(item.createdAt)}</Text>
+                    </View>
+                </TouchableOpacity>
+                {item.isOwnPost && (
+                    <TouchableOpacity 
+                        style={styles.postOptionsButton}
+                        onPress={() => onShowOptions(item.id)}
+                    >
+                        <Ionicons name="ellipsis-horizontal" size={24} color="#636e72" />
+                    </TouchableOpacity>
+                )}
+            </View>
+            {/* Imagem única ou carrossel de imagens */}
+            {images.length === 1 && (
+                <TouchableOpacity activeOpacity={0.9} onPress={() => { setZoomImage(images[0]); setZoomVisible(true); }}>
+                    <Image
+                        source={{ uri: images[0] }}
+                        style={styles.postImage}
+                        resizeMode="cover"
+                        onError={() => {}}
+                    />
+                </TouchableOpacity>
+            )}
+            {images.length > 1 && (
+                <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} style={{ backgroundColor: '#000' }}>
+                    {images.map((img, idx) => (
+                        <TouchableOpacity key={idx} activeOpacity={0.9} onPress={() => { setZoomImage(img); setZoomVisible(true); }}>
+                            <Image
+                                source={{ uri: img }}
+                                style={styles.postImage}
+                                resizeMode="cover"
+                                onError={() => {}}
+                            />
+                        </TouchableOpacity>
+                    ))}
+                </ScrollView>
+            )}
+            {/* Modal de zoom */}
+            <Modal visible={zoomVisible} transparent animationType="fade" onRequestClose={() => setZoomVisible(false)}>
+                <TouchableWithoutFeedback onPress={() => setZoomVisible(false)}>
+                    <View style={styles.zoomOverlay}>
+                        <Image
+                            source={{ uri: zoomImage }}
+                            style={styles.zoomImage}
+                            resizeMode="contain"
+                        />
+                    </View>
+                </TouchableWithoutFeedback>
+            </Modal>
+            {/* Conteúdo do post */}
+            <View style={styles.postContent}>
+                <Text style={styles.postDescription}>{item.description}</Text>
+                {item.location && (
+                    <View style={styles.locationContainer}>
+                        <Ionicons name="location-outline" size={14} color="#636e72" />
+                        <Text style={styles.locationText}>{item.location}</Text>
+                    </View>
+                )}
+            </View>
+
+            {/* Footer do post */}
+            <View style={styles.postFooter}>
+                <TouchableOpacity 
+                    style={styles.likeButton}
+                    onPress={() => onLike(item.id)}
+                >
+                    <Ionicons 
+                        name={isLiked ? "heart" : "heart-outline"} 
+                        size={24} 
+                        color={isLiked ? "#e74c3c" : "#636e72"} 
+                    />
+                    <Text style={[
+                        styles.likeCount,
+                        isLiked && styles.likedText
+                    ]}>
+                        {item.likes || 0}
+                    </Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.commentButton} onPress={() => navigation.navigate('CommentsScreen', { postId: item.id })}>
+                    <Ionicons name="chatbubble-outline" size={24} color="#636e72" />
+                    <Text style={styles.commentCount}>{item.comments || 0}</Text>
+                </TouchableOpacity>
+            </View>
+        </View>
     );
 }
 
@@ -800,5 +933,17 @@ const styles = StyleSheet.create({
         fontSize: 16,
         marginTop: 12,
         fontWeight: '500',
+    },
+    zoomOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.95)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 9999,
+    },
+    zoomImage: {
+        width: '100%',
+        height: '80%',
+        resizeMode: 'contain',
     },
 });

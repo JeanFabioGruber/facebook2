@@ -4,6 +4,9 @@ import {
     Text,
     View,
     StyleSheet,
+    KeyboardAvoidingView,
+    Platform,
+    ScrollView
 } from "react-native";
 import { useNavigation } from '@react-navigation/native';
 import {
@@ -65,34 +68,42 @@ export default function RegisterScreen () {
     }, [email, password, nome, telefone])
 
     return (
-        <SafeAreaView>
-            <View style={styles.container}>
-                <Text style={styles.title}>Registrar-se</Text>
-                <Text style={styles.label}>Nome</Text>
-                <EmailInput
-                    placeholder="Digite seu nome"
-                    value={nome}
-                    setValue={setNome}
-                />
-                <Text style={styles.label}>Telefone</Text>
-                <EmailInput
-                    placeholder="Digite seu telefone"
-                    value={telefone}
-                    setValue={setTelefone}
-                    keyboardType="phone-pad"
-                />
-                <EmailInput value={email} setValue={setEmail} />
-                <PasswordInput value={password} setValue={setPassword} />
-                {errorMessage &&
-                    <Text style={styles.errorMessage}>{errorMessage}</Text>
-                }
-                <PrimaryButton text={"Registrar-se"} action={register} />
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#f5f6fa' }}>
+            <KeyboardAvoidingView
+                style={{ flex: 1 }}
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
+            >
+                <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }} keyboardShouldPersistTaps="handled">
+                    <View style={styles.container}>
+                        <Text style={styles.title}>Registrar-se</Text>
+                        <Text style={styles.label}>Nome</Text>
+                        <EmailInput
+                            placeholder="Digite seu nome"
+                            value={nome}
+                            setValue={setNome}
+                        />
+                        <Text style={styles.label}>Telefone</Text>
+                        <EmailInput
+                            placeholder="Digite seu telefone"
+                            value={telefone}
+                            setValue={setTelefone}
+                            keyboardType="phone-pad"
+                        />
+                        <EmailInput value={email} setValue={setEmail} />
+                        <PasswordInput value={password} setValue={setPassword} />
+                        {errorMessage &&
+                            <Text style={styles.errorMessage}>{errorMessage}</Text>
+                        }
+                        <PrimaryButton text={"Registrar-se"} action={register} />
 
-                <Text>Já tem uma conta?</Text>
-                <SecondaryButton text={'Voltar para Login'} action={() => {
-                    navigation.goBack();
-                }} />
-            </View>
+                        <Text>Já tem uma conta?</Text>
+                        <SecondaryButton text={'Voltar para Login'} action={() => {
+                            navigation.goBack();
+                        }} />
+                    </View>
+                </ScrollView>
+            </KeyboardAvoidingView>
         </SafeAreaView>
     )
 }
