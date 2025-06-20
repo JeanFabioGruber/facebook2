@@ -83,7 +83,7 @@ export default function HomeScreen({ navigation }) {
                                 userProfileImage: userData.profileImage || null,                               
                                 likedBy: post.likedBy || [],
                                 likes: post.likes || 0,
-                                comments: post.comments || 0 // Garante que o campo comments seja exibido
+                                comments: post.comments || 0
                             };
                         }
                         return {

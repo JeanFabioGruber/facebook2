@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, FlatList, TextInput, TouchableOpacity, StyleSheet, SafeAreaView, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { db, auth } from '../firebase';
-import { collection, addDoc, query, where, orderBy, getDocs, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, query, where, orderBy, getDocs, serverTimestamp, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function CommentsScreen({ route, navigation }) {
@@ -89,8 +89,23 @@ export default function CommentsScreen({ route, navigation }) {
                     flatListRef.current.scrollToEnd({ animated: true });
                 }
             }, 100);
+            
+            // Add the comment to Firestore
             const docRef = await addDoc(collection(db, 'comments'), commentData);
             console.log('Comentário salvo no Firestore com ID:', docRef.id);
+            
+            // Update the post's comment count
+            const postRef = doc(db, 'posts', postId);
+            const postDoc = await getDoc(postRef);
+            
+            if (postDoc.exists()) {
+                const currentComments = postDoc.data().comments || 0;
+                await updateDoc(postRef, {
+                    comments: currentComments + 1
+                });
+                console.log('Contador de comentários atualizado no post');
+            }
+            
             setComments(prevComments => 
                 prevComments.map(c => 
                     c.id === localComment.id 
