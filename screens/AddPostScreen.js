@@ -153,34 +153,41 @@ export default function AddPostScreen({ navigation }) {
     };
 
     return (
-        <SafeAreaView style={styles.container}>
-            <LoadingOverlay 
-                visible={globalLoading || loading} 
-                text={loading ? 'Criando publicação...' : 'Carregando...'} 
-            />
-            
-            <ImagePickerModal
-                visible={showImageModal}
-                onClose={() => navigation.goBack()}
-                onPickFromGallery={handlePickImage}
-                onTakePhoto={handleTakePhoto}
-                onContinueWithoutPhoto={handleContinueWithoutPhoto}
-                hasExistingImage={!!image}
-                onRemoveImage={handleRemoveImage}
-            />
+    <SafeAreaView style={styles.container}>
+        <LoadingOverlay 
+            visible={globalLoading || loading} 
+            text={loading ? 'Criando publicação...' : 'Carregando...'} 
+        />
+        
+        <ImagePickerModal
+            visible={showImageModal}
+            onClose={() => navigation.goBack()}
+            onPickFromGallery={handlePickImage}
+            onTakePhoto={handleTakePhoto}
+            onContinueWithoutPhoto={handleContinueWithoutPhoto}
+            hasExistingImage={!!image}
+            onRemoveImage={handleRemoveImage}
+        />
 
-            {imageSelected && (
-                <KeyboardAvoidingView 
-                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                    style={styles.container}
-                >
+        {imageSelected && (
+            <View style={styles.mainContent}>
+                <View style={styles.headerContainer}>
                     <AddPostHeader
                         onBack={() => navigateWithLoading('Home')}
                         onPublish={handleCreatePost}
                         loading={loading}
                     />
+                </View>
 
-                    <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+                <KeyboardAvoidingView 
+                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                    style={styles.keyboardView}
+                >
+                    <ScrollView 
+                        style={styles.content} 
+                        showsVerticalScrollIndicator={false}
+                        contentContainerStyle={styles.scrollContent}
+                    >
                         <ImageSection
                             image={image}
                             onChangeImage={showImageOptions}
@@ -209,9 +216,10 @@ export default function AddPostScreen({ navigation }) {
                         />
                     </ScrollView>
                 </KeyboardAvoidingView>
-            )}
-        </SafeAreaView>
-    );
+            </View>
+        )}
+    </SafeAreaView>
+);
 }
 
 const styles = StyleSheet.create({
@@ -219,8 +227,20 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#f5f6fa',
     },
+    mainContent: {
+        flex: 1,
+    },
+    headerContainer: {        
+        paddingTop: 25,
+    },
+    keyboardView: {
+        flex: 1,
+    },
     content: {
         flex: 1,
+    },
+    scrollContent: {
         padding: 20,
+        paddingBottom: 40, 
     }
 });
