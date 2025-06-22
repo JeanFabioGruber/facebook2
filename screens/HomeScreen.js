@@ -12,8 +12,6 @@ import {
 } from 'react-native';
 import { db, auth } from '../firebase';
 import { collection, query, orderBy, getDocs, doc, getDoc, updateDoc, arrayUnion, arrayRemove, deleteDoc, where } from 'firebase/firestore';
-
-// Componentes
 import HomeHeader from '../components/home/HomeHeader';
 import SearchBar from '../components/home/SearchBar';
 import EmptyPostsList from '../components/home/EmptyPostsList';
@@ -21,13 +19,10 @@ import PostItem from '../components/post/PostItem';
 import PostOptionsModal from '../components/post/PostOptionsModal';
 import LoadingOverlay from '../components/LoadingOverlay';
 import LoadingView from '../components/shared/LoadingView';
-
-// Utilitários
 import { formatDate } from '../components/utils/formatHelpers';
 import { setupScrollAnimation } from '../components/utils/animationHelpers';
 
 export default function HomeScreen({ navigation }) {
-    // Estados
     const [posts, setPosts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);    
@@ -35,23 +30,15 @@ export default function HomeScreen({ navigation }) {
     const [selectedPostId, setSelectedPostId] = useState(null);
     const [showPostMenu, setShowPostMenu] = useState(false);
     const [deleting, setDeleting] = useState(false);
-    const [showAddPostLoading, setShowAddPostLoading] = useState(false);
-    
-    // Referências e valores de animação
+    const [showAddPostLoading, setShowAddPostLoading] = useState(false);    
     const scrollY = useRef(new Animated.Value(0)).current;
     const headerTranslateY = useRef(new Animated.Value(0)).current;
     const lastScrollY = useRef(0);
-    const currentUser = auth.currentUser;
-    
-    // Setup do manipulador de scroll para animação do header
+    const currentUser = auth.currentUser;    
     const handleScroll = setupScrollAnimation(scrollY, headerTranslateY, lastScrollY);
-
-    // Efeito para carregar os posts iniciais
     useEffect(() => {
         loadPosts();
     }, []);
-
-    // Funções
     const loadPosts = async () => {
         setLoading(true);
         try {
@@ -117,18 +104,14 @@ export default function HomeScreen({ navigation }) {
 
         try {
             const postRef = doc(db, 'posts', postId);
-            const postDoc = await getDoc(postRef);
-            
+            const postDoc = await getDoc(postRef);            
             if (!postDoc.exists()) {
                 Alert.alert('Erro', 'Post não encontrado');
                 return;
             }
-
             const postData = postDoc.data();
             const likedBy = postData.likedBy || [];
-            const isLiked = likedBy.includes(currentUser.uid);
-            
-            // Atualiza o estado localmente primeiro para melhor UX
+            const isLiked = likedBy.includes(currentUser.uid);            
             setPosts(prevPosts => 
                 prevPosts.map(post => {
                     if (post.id === postId) {
@@ -145,8 +128,6 @@ export default function HomeScreen({ navigation }) {
                     return post;
                 })
             );
-            
-            // Atualiza no Firebase
             if (isLiked) {                
                 await updateDoc(postRef, {
                     likedBy: arrayRemove(currentUser.uid),
@@ -162,7 +143,7 @@ export default function HomeScreen({ navigation }) {
         } catch (error) {
             console.error('Erro ao curtir post:', error);
             Alert.alert('Erro', 'Não foi possível curtir o post');            
-            loadPosts(); // Recarrega os posts em caso de erro
+            loadPosts();
         }
     };
 
@@ -206,24 +187,16 @@ export default function HomeScreen({ navigation }) {
         hidePostMenu();
         
         try {
-            // Excluir comentários relacionados
             const commentsQuery = query(
                 collection(db, 'comments'),
                 where('postId', '==', selectedPostId)
-            );
-            
-            const commentsSnapshot = await getDocs(commentsQuery);
-            
+            );            
+            const commentsSnapshot = await getDocs(commentsQuery);            
             const deleteCommentPromises = commentsSnapshot.docs.map(commentDoc => 
                 deleteDoc(doc(db, 'comments', commentDoc.id))
-            );
-            
-            await Promise.all(deleteCommentPromises);
-            
-            // Excluir o post
+            );            
+            await Promise.all(deleteCommentPromises);            
             await deleteDoc(doc(db, 'posts', selectedPostId));
-
-            // Atualizar estado
             setPosts(prevPosts => prevPosts.filter(post => post.id !== selectedPostId));
             
         } catch (error) {
@@ -235,13 +208,11 @@ export default function HomeScreen({ navigation }) {
         }
     };
 
-    // Filtra posts com base na busca
     const filteredPosts = posts.filter(post =>
         post.description?.toLowerCase().includes(search.toLowerCase()) ||
         post.userName?.toLowerCase().includes(search.toLowerCase())
     );
 
-    // Navegação fluida para AddPostScreen
     const goToAddPostScreen = () => {
         setShowAddPostLoading(true);
         setTimeout(() => {
@@ -250,7 +221,6 @@ export default function HomeScreen({ navigation }) {
         }, 400);
     };
 
-    // Rendering condicional para tela de carregamento
     if (loading && posts.length === 0) {
         return (
             <SafeAreaView style={styles.container}>
@@ -264,7 +234,6 @@ export default function HomeScreen({ navigation }) {
         );
     }
 
-    // UI principal
     return (
         <SafeAreaView style={styles.container}>
             {/* Overlay de carregamento durante a navegação */}

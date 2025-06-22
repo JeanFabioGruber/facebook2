@@ -1,195 +1,103 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
     View,
-    Text,
     StyleSheet,
-    TextInput,
-    TouchableOpacity,
-    Image,
     Alert,
     ScrollView,
     SafeAreaView,
-    ActivityIndicator,
     KeyboardAvoidingView,
-    Platform,
-    Modal,
-    TouchableWithoutFeedback
+    Platform
 } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
-import * as Location from 'expo-location';
-import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+
+import AddPostHeader from '../components/addPost/AddPostHeader';
+import ImageSection from '../components/addPost/ImageSection';
+import ImagePickerModal from '../components/addPost/ImagePickerModal';
+import DescriptionInput from '../components/addPost/DescriptionInput';
+import LocationInput from '../components/addPost/LocationInput';
+import TagInput from '../components/addPost/TagInput';
 import LoadingOverlay from '../components/LoadingOverlay';
+
+import { 
+    pickImageFromGallery,
+    takePhotoWithCamera,
+    getCurrentLocationAddress
+} from '../components/addPost/PostCreationUtil';
 
 export default function AddPostScreen({ navigation }) {
     const [image, setImage] = useState(null);
     const [description, setDescription] = useState('');
     const [location, setLocation] = useState('');
-    const [tags, setTags] = useState([]); // Agora é array
-    const [tagInput, setTagInput] = useState(''); // Input para nova tag
+    const [tags, setTags] = useState([]);
+    const [tagInput, setTagInput] = useState('');
+    
     const [loading, setLoading] = useState(false);
     const [locationLoading, setLocationLoading] = useState(false);
     const [showImageModal, setShowImageModal] = useState(true);
-    const [imageSelected, setImageSelected] = useState(false); 
-    const [globalLoading, setGlobalLoading] = useState(false); // Novo estado para overlay global
+    const [imageSelected, setImageSelected] = useState(false);
+    const [globalLoading, setGlobalLoading] = useState(false);
+    
     const currentUser = auth.currentUser;
 
-    useEffect(() => {
-        requestPermissions();
-    }, []);
-
-    const requestPermissions = async () => {
-        const { status: cameraStatus } = await ImagePicker.requestCameraPermissionsAsync();
-        if (cameraStatus !== 'granted') {
-            Alert.alert(
-                'Permissão necessária',
-                'Precisamos de permissão para acessar a câmera para que você possa tirar fotos.'
-            );
-        }
-        const { status: mediaStatus } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (mediaStatus !== 'granted') {
-            Alert.alert(
-                'Permissão necessária',
-                'Precisamos de permissão para acessar a galeria para que você possa escolher fotos.'
-            );
-        }
-        const { status: locationStatus } = await Location.requestForegroundPermissionsAsync();
-        if (locationStatus !== 'granted') {
-            Alert.alert(
-                'Permissão de localização',
-                'A permissão de localização foi negada. Você ainda pode adicionar a localização manualmente.'
-            );
-        }
-    };
-
-    // Limite do Firestore para string: 1MB (1048487 bytes)
-    const FIRESTORE_IMAGE_LIMIT = 1048487;
-
-    async function compressImageUntilLimit(pickFn) {
-        let quality = 0.7;
-        let result;
-        let base64Image = '';
-        do {
-            result = await pickFn(quality);
-            if (result.canceled) return { canceled: true };
-            base64Image = `data:image/jpeg;base64,${result.assets[0].base64}`;
-            if (base64Image.length <= FIRESTORE_IMAGE_LIMIT) break;
-            quality -= 0.1;
-        } while (quality >= 0.1);
-        return { base64Image, canceled: false };
-    }
-
-    const takePhoto = async () => {
-        try {
-            setShowImageModal(false);
-            const pickFn = async (quality) => await ImagePicker.launchCameraAsync({
-                mediaTypes: ImagePicker.MediaTypeOptions.Images,
-                allowsEditing: true,
-                aspect: [4, 3],
-                quality,
-                base64: true,
-            });
-            const { base64Image, canceled } = await compressImageUntilLimit(pickFn);
-            if (!canceled) {
-                setImage(base64Image);
-                setImageSelected(true);
-            } else {
-                navigation.goBack();
-            }
-        } catch (error) {
-            console.error('Erro ao tirar foto:', error);
-            Alert.alert('Erro', 'Não foi possível tirar a foto. Tente novamente.');
+    const handlePickImage = async () => {
+        setShowImageModal(false);
+        const { base64Image, canceled } = await pickImageFromGallery();
+        
+        if (!canceled) {
+            setImage(base64Image);
+            setImageSelected(true);
+        } else {
             navigation.goBack();
         }
     };
 
-    const pickImage = async () => {
-        try {
-            setShowImageModal(false);
-            const pickFn = async (quality) => await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ImagePicker.MediaTypeOptions.Images,
-                allowsEditing: true,
-                aspect: [4, 3],
-                quality,
-                base64: true,
-            });
-            const { base64Image, canceled } = await compressImageUntilLimit(pickFn);
-            if (!canceled) {
-                setImage(base64Image);
-                setImageSelected(true);
-            } else {
-                navigation.goBack();
-            }
-        } catch (error) {
-            console.error('Erro ao escolher imagem:', error);
-            Alert.alert('Erro', 'Não foi possível escolher a imagem. Tente novamente.');
+    const handleTakePhoto = async () => {
+        setShowImageModal(false);
+        const { base64Image, canceled } = await takePhotoWithCamera();
+        
+        if (!canceled) {
+            setImage(base64Image);
+            setImageSelected(true);
+        } else {
             navigation.goBack();
         }
     };
 
-    const continueWithoutPhoto = () => {
+    const handleContinueWithoutPhoto = () => {
         setShowImageModal(false);
         setImageSelected(true);
     };
 
-    const closeModal = () => {
-        setShowImageModal(false);
-        navigation.goBack();
-    };
-
-    const getCurrentLocation = async () => {
-        setLocationLoading(true);
-        try {
-            const { status } = await Location.requestForegroundPermissionsAsync();
-            if (status !== 'granted') {
-                Alert.alert(
-                    'Permissão negada',
-                    'Não foi possível obter sua localização. Você pode digitar manualmente.'
-                );
-                setLocationLoading(false);
-                return;
-            }
-
-            const location = await Location.getCurrentPositionAsync({});
-            const { latitude, longitude } = location.coords;
-
-            const geocode = await Location.reverseGeocodeAsync({
-                latitude,
-                longitude,
-            });
-
-            if (geocode.length > 0) {
-                const address = geocode[0];
-                let locationString = '';
-                
-                if (address.city && address.region) {
-                    locationString = `${address.city}, ${address.region}`;
-                } else if (address.city) {
-                    locationString = address.city;
-                } else if (address.region) {
-                    locationString = address.region;
-                } else {
-                    locationString = 'Localização encontrada';
-                }
-                
-                setLocation(locationString);
-            } else {
-                setLocation('Localização encontrada');
-            }
-        } catch (error) {
-            console.error('Erro ao obter localização:', error);
-            Alert.alert('Erro', 'Não foi possível obter sua localização. Tente novamente.');
-        } finally {
-            setLocationLoading(false);
-        }
-    };
-
-    const changeImage = () => {
+    const showImageOptions = () => {
         setShowImageModal(true);
     };
 
-    const removeImage = () => {
+    const handleGetCurrentLocation = async () => {
+        setLocationLoading(true);
+        const result = await getCurrentLocationAddress();
+        
+        if (result.success) {
+            setLocation(result.location);
+        } else {
+            Alert.alert('Erro', result.message || 'Não foi possível obter sua localização');
+        }
+        setLocationLoading(false);
+    };
+
+    const handleAddTag = () => {
+        const newTag = tagInput.trim();
+        if (newTag && !tags.includes(newTag)) {
+            setTags([...tags, newTag]);
+        }
+        setTagInput('');
+    };
+
+    const handleRemoveTag = (tagToRemove) => {
+        setTags(tags.filter(tag => tag !== tagToRemove));
+    };
+
+    const handleRemoveImage = () => {
         Alert.alert(
             'Remover Imagem',
             'Deseja remover a imagem selecionada?',
@@ -200,19 +108,7 @@ export default function AddPostScreen({ navigation }) {
         );
     };
 
-    const addTag = () => {
-        const newTag = tagInput.trim();
-        if (newTag && !tags.includes(newTag)) {
-            setTags([...tags, newTag]);
-        }
-        setTagInput('');
-    };
-
-    const removeTag = (tagToRemove) => {
-        setTags(tags.filter(tag => tag !== tagToRemove));
-    };
-
-    const createPost = async () => {
+    const handleCreatePost = async () => {
         if (!image && !description.trim()) {
             Alert.alert('Erro', 'Adicione uma imagem ou descrição para criar a publicação.');
             return;
@@ -233,12 +129,12 @@ export default function AddPostScreen({ navigation }) {
                 createdAt: serverTimestamp(),
                 likes: 0,
                 comments: 0,
-                tags: tags, // Salva array de tags
+                tags: tags,
             };
 
             await addDoc(collection(db, 'posts'), postData);            
-          
-            navigation.navigate('Home', { 
+            
+            navigateWithLoading('Home', { 
                 refresh: true,
                 newPost: true
             });
@@ -246,213 +142,73 @@ export default function AddPostScreen({ navigation }) {
         } catch (error) {
             console.error('Erro ao criar post:', error);
             Alert.alert('Erro', 'Não foi possível criar a publicação. Tente novamente.');
-        } finally {
             setLoading(false);
         }
     };
-
-    // Função para navegação com loading
-    const navigateWithLoading = (screen, params) => {
+    const navigateWithLoading = (screen, params = {}) => {
         setGlobalLoading(true);
         setTimeout(() => {
             setGlobalLoading(false);
             navigation.navigate(screen, params);
-        }, 400); // Pequeno delay para fluidez
+        }, 400);
     };
 
     return (
         <SafeAreaView style={styles.container}>
-            <LoadingOverlay visible={globalLoading || loading} text={loading ? 'Criando publicação...' : 'Carregando...'} />
-            {/* Modal de seleção de imagem */}
-            <Modal
+            <LoadingOverlay 
+                visible={globalLoading || loading} 
+                text={loading ? 'Criando publicação...' : 'Carregando...'} 
+            />
+            
+            <ImagePickerModal
                 visible={showImageModal}
-                transparent
-                animationType="fade"
-                onRequestClose={closeModal}
-            >
-                <TouchableWithoutFeedback onPress={closeModal}>
-                    <View style={styles.modalOverlay}>
-                        <TouchableWithoutFeedback>
-                            <View style={styles.modalContent}>
-                                <Text style={styles.modalTitle}>Adicionar Foto</Text>
-                                <Text style={styles.modalSubtitle}>Como você gostaria de adicionar uma foto?</Text>
-                                
-                                <TouchableOpacity
-                                    style={styles.modalOption}
-                                    onPress={pickImage}
-                                >
-                                    <Ionicons name="images" size={24} color="#1abc9c" />
-                                    <Text style={styles.modalOptionText}>Escolher da Galeria</Text>
-                                </TouchableOpacity>
-                                
-                                <TouchableOpacity
-                                    style={styles.modalOption}
-                                    onPress={takePhoto}
-                                >
-                                    <Ionicons name="camera" size={24} color="#1abc9c" />
-                                    <Text style={styles.modalOptionText}>Tirar Foto</Text>
-                                </TouchableOpacity>
-                                
-                                <TouchableOpacity
-                                    style={[styles.modalOption, styles.modalOptionSecondary]}
-                                    onPress={continueWithoutPhoto}
-                                >
-                                    <Ionicons name="text" size={24} color="#636e72" />
-                                    <Text style={[styles.modalOptionText, styles.modalOptionTextSecondary]}>
-                                        Continuar sem foto
-                                    </Text>
-                                </TouchableOpacity>
-                                
-                                <TouchableOpacity
-                                    style={styles.modalCancelButton}
-                                    onPress={closeModal}
-                                >
-                                    <Text style={styles.modalCancelText}>Cancelar</Text>
-                                </TouchableOpacity>
-                            </View>
-                        </TouchableWithoutFeedback>
-                    </View>
-                </TouchableWithoutFeedback>
-            </Modal>
+                onClose={() => navigation.goBack()}
+                onPickFromGallery={handlePickImage}
+                onTakePhoto={handleTakePhoto}
+                onContinueWithoutPhoto={handleContinueWithoutPhoto}
+                hasExistingImage={!!image}
+                onRemoveImage={handleRemoveImage}
+            />
 
             {imageSelected && (
                 <KeyboardAvoidingView 
                     behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                     style={styles.container}
                 >
-                    {/* Header */}
-                    <View style={styles.header}>
-                        <TouchableOpacity 
-                            onPress={() => navigateWithLoading('Home')} 
-                            style={styles.headerButton}
-                        >
-                            <Ionicons name="arrow-back" size={24} color="#1abc9c" />
-                        </TouchableOpacity>
-                        <Text style={styles.headerTitle}>Nova Publicação</Text>
-                        <TouchableOpacity 
-                            onPress={createPost}
-                            style={[styles.headerButton, styles.publishButton]}
-                            disabled={loading || globalLoading}
-                        >
-                            <Text style={styles.publishButtonText}>
-                                {loading ? 'Publicando...' : 'Publicar'}
-                            </Text>
-                        </TouchableOpacity>
-                    </View>
+                    <AddPostHeader
+                        onBack={() => navigateWithLoading('Home')}
+                        onPublish={handleCreatePost}
+                        loading={loading}
+                    />
 
                     <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-                        {/* Área da imagem */}
-                        {image && (
-                            <View style={styles.imageSection}>
-                                <View style={styles.imageContainer}>
-                                    <Image source={{ uri: image }} style={styles.selectedImage} />
-                                    <TouchableOpacity 
-                                        style={styles.changeImageButton}
-                                        onPress={changeImage}
-                                    >
-                                        <Ionicons name="pencil" size={20} color="#fff" />
-                                    </TouchableOpacity>
-                                    <TouchableOpacity 
-                                        style={styles.removeImageButton}
-                                        onPress={removeImage}
-                                    >
-                                        <Ionicons name="close-circle" size={30} color="#e74c3c" />
-                                    </TouchableOpacity>
-                                </View>
-                            </View>
-                        )}
-
-                        {/* Botão para adicionar foto se não tiver */}
-                        {!image && (
-                            <View style={styles.imageSection}>
-                                <TouchableOpacity 
-                                    style={styles.addPhotoButton}
-                                    onPress={changeImage}
-                                >
-                                    <Ionicons name="camera" size={32} color="#1abc9c" />
-                                    <Text style={styles.addPhotoText}>Adicionar Foto</Text>
-                                </TouchableOpacity>
-                            </View>
-                        )}
-
-                        {/* Campo de descrição */}
-                        <View style={styles.inputSection}>
-                            <Text style={styles.inputLabel}>Descrição</Text>
-                            <TextInput
-                                style={styles.descriptionInput}
-                                placeholder="No que você está pensando?"
-                                value={description}
-                                onChangeText={setDescription}
-                                multiline
-                                numberOfLines={4}
-                                textAlignVertical="top"
-                                maxLength={500}
-                            />
-                            <Text style={styles.characterCount}>
-                                {description.length}/500
-                            </Text>
-                        </View>
-
-                        {/* Campo de localização */}
-                        <View style={styles.inputSection}>
-                            <View style={styles.locationHeader}>
-                                <Text style={styles.inputLabel}>Localização</Text>
-                                <TouchableOpacity 
-                                    onPress={getCurrentLocation}
-                                    style={styles.locationButton}
-                                    disabled={locationLoading}
-                                >
-                                    {locationLoading ? (
-                                        <ActivityIndicator size="small" color="#1abc9c" />
-                                    ) : (
-                                        <Ionicons name="location" size={20} color="#1abc9c" />
-                                    )}
-                                </TouchableOpacity>
-                            </View>
-                            <TextInput
-                                style={styles.locationInput}
-                                placeholder="Adicione uma localização"
-                                value={location}
-                                onChangeText={setLocation}
-                                maxLength={100}
-                            />
-                        </View>
-                        {/* Campo de tags */}
-                        <View style={styles.inputSection}>
-                            <Text style={styles.inputLabel}>Tags</Text>
-                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                <TextInput
-                                    style={[styles.locationInput, { flex: 1 }]}
-                                    placeholder="Digite uma tag e pressione +"
-                                    value={tagInput}
-                                    onChangeText={setTagInput}
-                                    maxLength={30}
-                                    onSubmitEditing={addTag}
-                                />
-                                <TouchableOpacity onPress={addTag} style={{ marginLeft: 8, backgroundColor: '#1abc9c', borderRadius: 20, padding: 10 }}>
-                                    <Ionicons name="add" size={20} color="#fff" />
-                                </TouchableOpacity>
-                            </View>
-                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 }}>
-                                {tags.map((tag, idx) => (
-                                    <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#e0f7fa', borderRadius: 16, paddingHorizontal: 10, paddingVertical: 4, marginRight: 6, marginBottom: 6 }}>
-                                        <Text style={{ color: '#00796b', fontWeight: 'bold' }}>#{tag}</Text>
-                                        <TouchableOpacity onPress={() => removeTag(tag)} style={{ marginLeft: 4 }}>
-                                            <Ionicons name="close-circle" size={16} color="#e74c3c" />
-                                        </TouchableOpacity>
-                                    </View>
-                                ))}
-                            </View>
-                        </View>
+                        <ImageSection
+                            image={image}
+                            onChangeImage={showImageOptions}
+                            onRemoveImage={handleRemoveImage}
+                        />
+                        
+                        <DescriptionInput
+                            value={description}
+                            onChangeText={setDescription}
+                            maxLength={500}
+                        />
+                        
+                        <LocationInput
+                            value={location}
+                            onChangeText={setLocation}
+                            onGetCurrentLocation={handleGetCurrentLocation}
+                            isLoading={locationLoading}
+                        />
+                        
+                        <TagInput
+                            tags={tags}
+                            tagInput={tagInput}
+                            onTagInputChange={setTagInput}
+                            onAddTag={handleAddTag}
+                            onRemoveTag={handleRemoveTag}
+                        />
                     </ScrollView>
-
-                    {/* Loading overlay */}
-                    {loading && (
-                        <View style={styles.loadingOverlay}>
-                            <ActivityIndicator size="large" color="#1abc9c" />
-                            <Text style={styles.loadingText}>Criando publicação...</Text>
-                        </View>
-                    )}
                 </KeyboardAvoidingView>
             )}
         </SafeAreaView>
@@ -464,219 +220,8 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#f5f6fa',
     },
-    modalOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 20,
-    },
-    modalContent: {
-        backgroundColor: '#fff',
-        borderRadius: 20,
-        padding: 20,
-        width: '100%',
-        maxWidth: 320,
-        alignItems: 'center',
-        elevation: 10,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 5 },
-        shadowOpacity: 0.25,
-        shadowRadius: 10,
-    },
-    modalTitle: {
-        fontSize: 22,
-        fontWeight: 'bold',
-        color: '#2d3436',
-        marginBottom: 8,
-        textAlign: 'center',
-    },
-    modalSubtitle: {
-        fontSize: 16,
-        color: '#636e72',
-        marginBottom: 30,
-        textAlign: 'center',
-        lineHeight: 22,
-    },
-    modalOption: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#f8f9fa',
-        paddingVertical: 16,
-        paddingHorizontal: 20,
-        borderRadius: 12,
-        marginBottom: 12,
-        width: '100%',
-        borderWidth: 1,
-        borderColor: '#e0e0e0',
-    },
-    modalOptionSecondary: {
-        backgroundColor: '#fff',
-        borderColor: '#e0e0e0',
-    },
-    modalOptionText: {
-        fontSize: 16,
-        color: '#2d3436',
-        marginLeft: 12,
-        fontWeight: '500',
-    },
-    modalOptionTextSecondary: {
-        color: '#636e72',
-    },
-    modalCancelButton: {
-        marginTop: 10,
-        paddingVertical: 12,
-        paddingHorizontal: 20,
-    },
-    modalCancelText: {
-        fontSize: 16,
-        color: '#e74c3c',
-        fontWeight: '500',
-    },
-    header: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingHorizontal: 20,
-        paddingVertical: 15,
-        backgroundColor: '#fff',
-        elevation: 2,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-    },
-    headerButton: {
-        padding: 5,
-    },
-    headerTitle: {
-        fontSize: 20,
-        fontWeight: 'bold',
-        color: '#2d3436',
-    },
-    publishButton: {
-        backgroundColor: '#1abc9c',
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 20,
-    },
-    publishButtonText: {
-        color: '#fff',
-        fontWeight: 'bold',
-        fontSize: 16,
-    },
     content: {
         flex: 1,
         padding: 20,
-    },
-    imageSection: {
-        marginBottom: 20,
-    },
-    imageContainer: {
-        position: 'relative',
-        borderRadius: 12,
-        overflow: 'hidden',
-    },
-    selectedImage: {
-        width: '100%',
-        height: 250,
-        borderRadius: 12,
-    },
-    changeImageButton: {
-        position: 'absolute',
-        bottom: 10,
-        right: 10,
-        backgroundColor: 'rgba(0,0,0,0.6)',
-        borderRadius: 20,
-        padding: 8,
-    },
-    removeImageButton: {
-        position: 'absolute',
-        top: 10,
-        right: 10,
-        backgroundColor: '#fff',
-        borderRadius: 15,
-    },
-    addPhotoButton: {
-        height: 150,
-        backgroundColor: '#fff',
-        borderRadius: 12,
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 2,
-        borderColor: '#1abc9c',
-        borderStyle: 'dashed',
-    },
-    addPhotoText: {
-        marginTop: 8,
-        fontSize: 16,
-        color: '#1abc9c',
-        fontWeight: '500',
-    },
-    inputSection: {
-        marginBottom: 20,
-    },
-    inputLabel: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        color: '#2d3436',
-        marginBottom: 8,
-    },
-    descriptionInput: {
-        backgroundColor: '#fff',
-        borderRadius: 12,
-        padding: 15,
-        fontSize: 16,
-        color: '#2d3436',
-        minHeight: 100,
-        textAlignVertical: 'top',
-        elevation: 1,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 2,
-    },
-    characterCount: {
-        textAlign: 'right',
-        marginTop: 5,
-        fontSize: 12,
-        color: '#636e72',
-    },
-    locationHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 8,
-    },
-    locationButton: {
-        padding: 5,
-    },
-    locationInput: {
-        backgroundColor: '#fff',
-        borderRadius: 12,
-        padding: 15,
-        fontSize: 16,
-        color: '#2d3436',
-        elevation: 1,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 2,
-    },
-    loadingOverlay: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(0,0,0,0.3)',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    loadingText: {
-        marginTop: 10,
-        fontSize: 16,
-        color: '#fff',
-        fontWeight: '500',
-    },
+    }
 });
