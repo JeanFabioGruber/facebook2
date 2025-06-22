@@ -20,6 +20,7 @@ import {
 import { db, auth } from '../firebase';
 import { collection, query, orderBy, getDocs, doc, getDoc, updateDoc, arrayUnion, arrayRemove, deleteDoc, where } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
+import LoadingOverlay from '../components/LoadingOverlay';
 
 // Função utilitária para formatar datas
 function formatDate(timestamp) {
@@ -45,6 +46,7 @@ export default function HomeScreen({ navigation }) {
     const [selectedPostId, setSelectedPostId] = useState(null);
     const [showPostMenu, setShowPostMenu] = useState(false);
     const [deleting, setDeleting] = useState(false);
+    const [showAddPostLoading, setShowAddPostLoading] = useState(false);
     const currentUser = auth.currentUser;     
     const scrollY = useRef(new Animated.Value(0)).current;
     const headerTranslateY = useRef(new Animated.Value(0)).current;
@@ -321,6 +323,16 @@ export default function HomeScreen({ navigation }) {
                 {/* Conteúdo do post */}
                 <View style={styles.postContent}>
                     <Text style={styles.postDescription}>{item.description}</Text>
+                    {/* Exibe as tags do post */}
+                    {Array.isArray(item.tags) && item.tags.length > 0 && (
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 6 }}>
+                            {item.tags.map((tag, idx) => (
+                                <View key={idx} style={{ backgroundColor: '#e0f7fa', borderRadius: 16, paddingHorizontal: 10, paddingVertical: 4, marginRight: 6, marginBottom: 6 }}>
+                                    <Text style={{ color: '#00796b', fontWeight: 'bold', fontSize: 13 }}>#{tag}</Text>
+                                </View>
+                            ))}
+                        </View>
+                    )}
                     
                     {item.location && (
                         <View style={styles.locationContainer}>
@@ -386,15 +398,25 @@ export default function HomeScreen({ navigation }) {
         );
     }
 
+    // Navegação fluida para AddPostScreen
+    const goToAddPostScreen = () => {
+        setShowAddPostLoading(true);
+        setTimeout(() => {
+            setShowAddPostLoading(false);
+            navigation.navigate('AddPostScreen');
+        }, 400);
+    };
+
     return (
         <SafeAreaView style={styles.container}>
+            <LoadingOverlay visible={showAddPostLoading} text="Abrindo publicação..." />
             {/* Header animado */}
             <Animated.View style={[styles.header, { transform: [{ translateY: headerTranslateY }] }]}> 
                 <Text style={styles.headerTitle}>Feed</Text>
                 <View style={styles.headerButtons}>
                     <TouchableOpacity 
                         style={styles.headerButton}
-                        onPress={() => navigation.navigate('AddPostScreen')}
+                        onPress={goToAddPostScreen}
                     >
                         <Ionicons name="add-circle-outline" size={28} color="#1abc9c" />
                     </TouchableOpacity>
@@ -587,12 +609,20 @@ function PostItem({ item, currentUser, navigation, onLike, onShowOptions, format
             {/* Conteúdo do post */}
             <View style={styles.postContent}>
                 <Text style={styles.postDescription}>{item.description}</Text>
-                {item.location && (
-                    <View style={styles.locationContainer}>
-                        <Ionicons name="location-outline" size={14} color="#636e72" />
-                        <Text style={styles.locationText}>{item.location}</Text>
+                {/* Exibe as tags do post */}
+                {Array.isArray(item.tags) && item.tags.length > 0 && (
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 6 }}>
+                        {item.tags.map((tag, idx) => (
+                            <View key={idx} style={{ backgroundColor: '#e0f7fa', borderRadius: 16, paddingHorizontal: 10, paddingVertical: 4, marginRight: 6, marginBottom: 6 }}>
+                                <Text style={{ color: '#00796b', fontWeight: 'bold', fontSize: 13 }}>#{tag}</Text>
+                            </View>
+                        ))}
                     </View>
                 )}
+                <View style={styles.locationContainer}>
+                    <Ionicons name="location-outline" size={14} color="#636e72" />
+                    <Text style={styles.locationText}>{item.location}</Text>
+                </View>
             </View>
 
             {/* Footer do post */}

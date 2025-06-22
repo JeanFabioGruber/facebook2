@@ -11,7 +11,8 @@ import {
     Alert,
     Dimensions,
     Modal,
-    TouchableWithoutFeedback
+    TouchableWithoutFeedback,
+    ScrollView
 } from 'react-native';
 import { db, auth } from '../firebase';
 import { doc, getDoc, collection, query, where, orderBy, getDocs, updateDoc, arrayUnion, arrayRemove, deleteDoc } from 'firebase/firestore';
@@ -26,6 +27,8 @@ export default function ProfileScreen({ route, navigation }) {
     const [selectedPostId, setSelectedPostId] = useState(null);
     const [showPostMenu, setShowPostMenu] = useState(false);
     const [deleting, setDeleting] = useState(false);
+    const [zoomVisible, setZoomVisible] = useState(false);
+    const [zoomPostImage, setZoomPostImage] = useState(null);
     const currentUser = auth.currentUser;
     const isOwnProfile = currentUser?.uid === userId;
 
@@ -243,11 +246,13 @@ export default function ProfileScreen({ route, navigation }) {
                 )}
                 
                 {item.imageUrl && (
-                    <Image
-                        source={{ uri: item.imageUrl }}
-                        style={styles.postImage}
-                        resizeMode="cover"
-                    />
+                    <TouchableOpacity activeOpacity={0.9} onPress={() => setZoomPostImage(item.imageUrl)}>
+                        <Image
+                            source={{ uri: item.imageUrl }}
+                            style={styles.postImage}
+                            resizeMode="cover"
+                        />
+                    </TouchableOpacity>
                 )}
                 
                 <View style={styles.postContent}>
@@ -296,10 +301,12 @@ export default function ProfileScreen({ route, navigation }) {
         <View style={styles.profileHeader}>
             <View style={styles.profileImageContainer}>
                 {profileData?.profileImage ? (
-                    <Image 
-                        source={{ uri: profileData.profileImage }} 
-                        style={styles.profileImage} 
-                    />
+                    <TouchableOpacity activeOpacity={0.9} onPress={() => setZoomVisible(true)}>
+                        <Image 
+                            source={{ uri: profileData.profileImage }} 
+                            style={styles.profileImage} 
+                        />
+                    </TouchableOpacity>
                 ) : (
                     <View style={styles.placeholderImage}>
                         <Text style={styles.placeholderText}>
@@ -446,6 +453,45 @@ export default function ProfileScreen({ route, navigation }) {
                     <Text style={styles.loadingOverlayText}>Excluindo publicação...</Text>
                 </View>
             )}
+
+            {/* Modal de zoom da foto de perfil */}
+            <Modal visible={zoomVisible} transparent animationType="fade" onRequestClose={() => setZoomVisible(false)}>
+                <TouchableWithoutFeedback onPress={() => setZoomVisible(false)}>
+                    <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center', alignItems: 'center' }}>
+                        <ScrollView
+                            style={{ width: '100%', height: '100%' }}
+                            contentContainerStyle={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}
+                            minimumZoomScale={1}
+                            maximumZoomScale={4}
+                            centerContent={true}
+                        >
+                            <Image
+                                source={{ uri: profileData?.profileImage }}
+                                style={{ width: '100%', height: 400, resizeMode: 'contain' }}
+                            />
+                        </ScrollView>
+                    </View>
+                </TouchableWithoutFeedback>
+            </Modal>
+            {/* Modal de zoom da foto do post */}
+            <Modal visible={!!zoomPostImage} transparent animationType="fade" onRequestClose={() => setZoomPostImage(null)}>
+                <TouchableWithoutFeedback onPress={() => setZoomPostImage(null)}>
+                    <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center', alignItems: 'center' }}>
+                        <ScrollView
+                            style={{ width: '100%', height: '100%' }}
+                            contentContainerStyle={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}
+                            minimumZoomScale={1}
+                            maximumZoomScale={4}
+                            centerContent={true}
+                        >
+                            <Image
+                                source={{ uri: zoomPostImage }}
+                                style={{ width: '100%', height: 400, resizeMode: 'contain' }}
+                            />
+                        </ScrollView>
+                    </View>
+                </TouchableWithoutFeedback>
+            </Modal>
         </SafeAreaView>
     );
 }
