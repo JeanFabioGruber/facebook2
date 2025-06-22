@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     SafeAreaView,
-    Text,
     View,
     StyleSheet,
     KeyboardAvoidingView,
@@ -15,117 +14,117 @@ import {
     db
 } from '../firebase';
 import { doc, setDoc } from "firebase/firestore";
-import { PrimaryButton, SecondaryButton } from '../components/Buttons';
-import { EmailInput, PasswordInput } from '../components/CustomInputs';
+import RegisterHeader from '../components/auth/RegisterHeader';
+import RegisterForm from '../components/auth/RegisterForm';
+import LoginLink from '../components/auth/LoginLink';
+import AuthErrorMessage from '../components/auth/AuthErrorMessage';
+import { validateEmail, validatePassword } from '../components/auth/AuthValidation';
 
-export default function RegisterScreen () {
-
+export default function RegisterScreen() {
     const navigation = useNavigation();
-
-    const regexEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const regexPassword = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/;
-
-    const [ email, setEmail ] = useState('');
-    const [ password, setPassword ] = useState('');
-    const [ nome, setNome ] = useState('');
-    const [ telefone, setTelefone ] = useState('');
-    const [ errorMessage, setErrorMessage ] = useState('');
-
-    const register = async () => {
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [nome, setNome] = useState('');
+    const [telefone, setTelefone] = useState('');
+    const [errorMessage, setErrorMessage] = useState('');
+    const handleRegister = async () => {
         if (!nome || !telefone || !email || !password) {
             setErrorMessage('Preencha todos os campos.');
             return;
         }
 
-        if (!regexEmail.test(email)) {
+        if (!validateEmail(email)) {
             setErrorMessage('E-mail inválido');
             return;
         }
 
-        if (!regexPassword.test(password)) {
+        if (!validatePassword(password)) {
             setErrorMessage('A senha deve conter no mínimo 8 caracteres, letra maiúscula, minúscula, número e símbolo');
             return;
         }
 
         setErrorMessage('');
-
         try {
             const userCredential = await createUserWithEmailAndPassword(auth, email, password);
             const user = userCredential.user;
+            
             await setDoc(doc(db, "users", user.uid), {
                 nome: nome,
                 telefone: telefone,
                 email: user.email
             });
-            navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+            
+            navigation.reset({ 
+                index: 0, 
+                routes: [{ name: 'Home' }] 
+            });
         } catch (error) {
-            setErrorMessage(error.message);
+            if (error.code === 'auth/email-already-in-use') {
+                setErrorMessage('Este e-mail já está em uso.');
+            } else if (error.code === 'auth/invalid-email') {
+                setErrorMessage('E-mail inválido.');
+            } else {
+                setErrorMessage(error.message);
+            }
         }
-    }
-
+    };
     useEffect(() => {
         setErrorMessage('');
-    }, [email, password, nome, telefone])
+    }, [email, password, nome, telefone]);
 
     return (
-        <SafeAreaView style={{ flex: 1, backgroundColor: '#f5f6fa' }}>
+        <SafeAreaView style={styles.safeArea}>
             <KeyboardAvoidingView
-                style={{ flex: 1 }}
+                style={styles.keyboardAvoidingView}
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
             >
-                <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }} keyboardShouldPersistTaps="handled">
+                <ScrollView 
+                    contentContainerStyle={styles.scrollViewContent} 
+                    keyboardShouldPersistTaps="handled"
+                >
                     <View style={styles.container}>
-                        <Text style={styles.title}>Registrar-se</Text>
-                        <Text style={styles.label}>Nome</Text>
-                        <EmailInput
-                            placeholder="Digite seu nome"
-                            value={nome}
-                            setValue={setNome}
+                        {/* Cabeçalho */}
+                        <RegisterHeader />
+                        
+                        {/* Formulário de registro */}
+                        <RegisterForm 
+                            nome={nome}
+                            setNome={setNome}
+                            telefone={telefone}
+                            setTelefone={setTelefone}
+                            email={email}
+                            setEmail={setEmail}
+                            password={password}
+                            setPassword={setPassword}
+                            onRegister={handleRegister}
                         />
-                        <Text style={styles.label}>Telefone</Text>
-                        <EmailInput
-                            placeholder="Digite seu telefone"
-                            value={telefone}
-                            setValue={setTelefone}
-                            keyboardType="phone-pad"
-                        />
-                        <EmailInput value={email} setValue={setEmail} />
-                        <PasswordInput value={password} setValue={setPassword} />
-                        {errorMessage &&
-                            <Text style={styles.errorMessage}>{errorMessage}</Text>
-                        }
-                        <PrimaryButton text={"Registrar-se"} action={register} />
-
-                        <Text>Já tem uma conta?</Text>
-                        <SecondaryButton text={'Voltar para Login'} action={() => {
-                            navigation.goBack();
-                        }} />
+                        
+                        {/* Mensagem de erro */}
+                        <AuthErrorMessage message={errorMessage} />
+                        
+                        {/* Link para login */}
+                        <LoginLink onPress={() => navigation.goBack()} />
                     </View>
                 </ScrollView>
             </KeyboardAvoidingView>
         </SafeAreaView>
-    )
+    );
 }
 
 const styles = StyleSheet.create({
+    safeArea: {
+        flex: 1, 
+        backgroundColor: '#f5f6fa'
+    },
+    keyboardAvoidingView: {
+        flex: 1
+    },
+    scrollViewContent: {
+        flexGrow: 1, 
+        justifyContent: 'center'
+    },
     container: {
         margin: 25
-    },
-    title: {
-        fontSize: 45,
-        textAlign: 'center',
-        marginVertical: 40
-    },
-    label: {
-        fontSize: 16,
-        marginTop: 10,
-        marginBottom: 2,
-        marginLeft: 2
-    },
-    errorMessage: {
-        fontSize: 18,
-        textAlign: 'center',
-        color: 'red'
     }
 });
