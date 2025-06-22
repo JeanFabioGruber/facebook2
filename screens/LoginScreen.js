@@ -14,6 +14,7 @@ export default function LoginScreen() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [errorMessage, setErrorMessage] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
 
     useEffect(() => {
         setErrorMessage('');
@@ -26,11 +27,15 @@ export default function LoginScreen() {
             return;
         }
 
+        setIsLoading(true);
+
         try {
             await signInWithEmailAndPassword(auth, email, password);
         } catch (error) {
             console.error('Erro no login:', error);
             setErrorMessage(translateFirebaseError(error.code) || error.message);
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -61,6 +66,7 @@ export default function LoginScreen() {
                     password={password}
                     setPassword={setPassword}
                     onSubmit={handleLogin}
+                    isLoading={isLoading}
                 />
                 
                 {/* Mensagem de erro */}

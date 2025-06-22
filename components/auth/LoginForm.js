@@ -8,13 +8,14 @@ const LoginForm = ({
     setEmail, 
     password, 
     setPassword, 
-    onSubmit
+    onSubmit,
+    isLoading = false
 }) => {
     return (
         <View style={styles.formContainer}>
             <EmailInput value={email} setValue={setEmail} />
             <PasswordInput value={password} setValue={setPassword} />
-            <PrimaryButton text="Entrar" action={onSubmit} />
+            <PrimaryButton text="Entrar" action={onSubmit} disabled={isLoading}  />
         </View>
     );
 };
