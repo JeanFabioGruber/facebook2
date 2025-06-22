@@ -10,7 +10,6 @@ import {
 } from 'react-native';
 import { auth, db } from '../firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-
 import AddPostHeader from '../components/addPost/AddPostHeader';
 import ImageSection from '../components/addPost/ImageSection';
 import ImagePickerModal from '../components/addPost/ImagePickerModal';
