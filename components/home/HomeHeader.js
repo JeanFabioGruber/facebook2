@@ -1,9 +1,9 @@
 import { View, Text, TouchableOpacity, StyleSheet, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-const HomeHeader = ({ headerTranslateY, onAddPost, onProfile }) => {
+const HomeHeader = ({onAddPost, onProfile }) => {
     return (
-        <Animated.View style={[styles.header, { transform: [{ translateY: headerTranslateY }] }]}>
+        <View style={styles.header}>
             <Text style={styles.headerTitle}>Feed</Text>
             <View style={styles.headerButtons}>
                 <TouchableOpacity 
@@ -19,7 +19,7 @@ const HomeHeader = ({ headerTranslateY, onAddPost, onProfile }) => {
                     <Ionicons name="person-circle-outline" size={28} color="#1abc9c" />
                 </TouchableOpacity>
             </View>
-        </Animated.View>
+        </View>
     );
 };
 

@@ -240,8 +240,7 @@ export default function HomeScreen({ navigation }) {
             <LoadingOverlay visible={showAddPostLoading} text="Abrindo publicação..." />
             
             {/* Header animado */}
-            <HomeHeader 
-                headerTranslateY={headerTranslateY}
+            <HomeHeader                 
                 onAddPost={goToAddPostScreen}
                 onProfile={() => navigation.navigate('MinhaConta')}
             />
