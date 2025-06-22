@@ -198,9 +198,6 @@ export default function CommentsScreen({ route, navigation }) {
                     <Ionicons name="arrow-back" size={24} color="#1abc9c" />
                 </TouchableOpacity>
                 <Text style={styles.title}>Comentários ({comments.length})</Text>
-                <TouchableOpacity onPress={handleRefresh} style={styles.refreshButton}>
-                    <Ionicons name="refresh" size={20} color="#1abc9c" />
-                </TouchableOpacity>
             </View>            
             <FlatList
                 ref={flatListRef}
