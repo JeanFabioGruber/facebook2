@@ -4,6 +4,7 @@ import MinhaContaScreen from "../screens/MinhaContaScreen";
 import ProfileScreen from "../screens/ProfileScreen";
 import AddPostScreen from "../screens/AddPostScreen";
 import CommentsScreen from "../screens/CommentsScreen";
+import TagPostsScreen from '../screens/TagPostsScreen';
 
 export default function AppNavigator () {
     const Stack = createNativeStackNavigator();
@@ -15,6 +16,7 @@ export default function AppNavigator () {
             <Stack.Screen name="ProfileScreen" component={ProfileScreen} options={{ headerShown: false }} />
             <Stack.Screen name="AddPostScreen" component={AddPostScreen} options={{ headerShown: false }} />
             <Stack.Screen name="CommentsScreen" component={CommentsScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="TagPostsScreen" component={TagPostsScreen} options={{ headerShown: false }} />
         </Stack.Navigator>
     )
 }

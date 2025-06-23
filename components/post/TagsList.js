@@ -1,14 +1,27 @@
-import { View, Text, StyleSheet } from 'react-native';
+import React from 'react';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 
 const TagsList = ({ tags }) => {
+    const navigation = useNavigation();
+    
     if (!Array.isArray(tags) || tags.length === 0) return null;
+    
+    const handleTagPress = (tag) => {
+        navigation.navigate('TagPostsScreen', { tag });
+    };
     
     return (
         <View style={styles.container}>
             {tags.map((tag, idx) => (
-                <View key={idx} style={styles.tagContainer}>
+                <TouchableOpacity 
+                    key={idx} 
+                    style={styles.tagContainer}
+                    onPress={() => handleTagPress(tag)}
+                    activeOpacity={0.7}
+                >
                     <Text style={styles.tagText}>#{tag}</Text>
-                </View>
+                </TouchableOpacity>
             ))}
         </View>
     );
