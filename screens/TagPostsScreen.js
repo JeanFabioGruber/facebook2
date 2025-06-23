@@ -9,7 +9,7 @@ import {
     RefreshControl 
 } from 'react-native';
 import { auth, db } from '../firebase';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, arrayUnion, arrayRemove, updateDoc } from 'firebase/firestore';
 import PostItem from '../components/post/PostItem';
 import { formatDate } from '../components/utils/dateFormatter';
 import TagPostsHeader from '../components/tags/TagPostsHeader';
@@ -79,6 +79,60 @@ export default function TagPostsScreen({ route, navigation }) {
         }
     };
 
+    const toggleLike = async (postId) => {
+    if (!currentUser) {
+        Alert.alert('Erro', 'Você precisa estar logado para curtir posts');
+        return;
+    }
+
+    try {
+        const postRef = doc(db, 'posts', postId);
+        const postDoc = await getDoc(postRef);
+        
+        if (!postDoc.exists()) {
+            Alert.alert('Erro', 'Post não encontrado');
+            return;
+        }
+
+        const postData = postDoc.data();
+        const likedBy = postData.likedBy || [];
+        const isLiked = likedBy.includes(currentUser.uid);
+        
+        setPosts(prevPosts => 
+            prevPosts.map(post => {
+                if (post.id === postId) {
+                    const newLikedBy = isLiked 
+                        ? post.likedBy.filter(id => id !== currentUser.uid)
+                        : [...post.likedBy, currentUser.uid];
+                    
+                    return {
+                        ...post,
+                        likedBy: newLikedBy,
+                        likes: newLikedBy.length
+                    };
+                }
+                return post;
+            })
+        );
+
+        if (isLiked) {
+            await updateDoc(postRef, {
+                likedBy: arrayRemove(currentUser.uid),
+                likes: Math.max(0, (postData.likes || 0) - 1)
+            });
+        } else {
+            await updateDoc(postRef, {
+                likedBy: arrayUnion(currentUser.uid),
+                likes: (postData.likes || 0) + 1
+            });
+        }
+    } catch (error) {
+        console.error('Erro ao curtir post:', error);
+        Alert.alert('Erro', 'Não foi possível curtir o post');
+        loadTagPosts();
+    }
+};
+
     const getDefaultPostData = (post) => ({
         ...post,
         userName: 'Usuário',
@@ -116,7 +170,7 @@ export default function TagPostsScreen({ route, navigation }) {
                         item={item}
                         currentUser={currentUser}
                         navigation={navigation}
-                        onLike={() => {}} // Implemente a funcionalidade de curtidas
+                        onLike={toggleLike}
                         onShowOptions={() => {}}
                         formatDate={formatDate}
                     />
